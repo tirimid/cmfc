@@ -8,6 +8,9 @@
 #include <getopt.h>
 #include <unistd.h>
 
+#define HS_IS_TEXT(hstate) !HS_IS_RAW(hstate)
+#define HS_IS_RAW(hstate) ((hstate) & (HS_LINK_REF | HS_FORCE_RAW))
+
 typedef enum node_type
 {
 	NT_ROOT = 0,
@@ -16,6 +19,7 @@ typedef enum node_type
 	NT_U_LIST,
 	NT_O_LIST,
 	NT_LIST_ITEM,
+	NT_IMAGE,
 } node_type_t;
 
 typedef enum parse_status
@@ -24,6 +28,17 @@ typedef enum parse_status
 	PS_ERR,
 	PS_SKIP,
 } parse_status_t;
+
+typedef enum htmlify_state
+{
+	HS_NONE = 0,
+	HS_LINK_REF = 0x1,
+	HS_LINK_TEXT = 0x2,
+	HS_CODE = 0x4,
+	HS_ITALIC = 0x8,
+	HS_BOLD = 0x10,
+	HS_FORCE_RAW = 0x20,
+} htmlify_state_t;
 
 typedef struct conf
 {
@@ -72,22 +87,26 @@ static int doc_data_verify(void);
 static int file_data_read(void);
 static void gen_html(void);
 static void gen_any_html(node_t const *node);
+static void gen_image_html(node_t const *node);
 static void gen_o_list_html(node_t const *node);
 static void gen_paragraph_html(node_t const *node);
 static void gen_title_html(node_t const *node);
 static void gen_u_list_html(node_t const *node);
+static char *htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate);
 static void node_add_child(node_t *node, node_t *child);
 static void node_print(FILE *fp, node_t const *node, int depth);
 static int parse(void);
 static parse_status_t parse_any(node_t *out, size_t *i);
 static parse_status_t parse_doc(node_t *out, size_t *i);
+static parse_status_t parse_image(node_t *out, size_t *i);
 static parse_status_t parse_o_list(node_t *out, size_t *i);
 static parse_status_t parse_paragraph(node_t *out, size_t *i);
 static parse_status_t parse_title(node_t *out, size_t *i);
 static parse_status_t parse_u_list(node_t *out, size_t *i);
 static void prog_err(size_t start, char const *msg);
 static char const *single_line(char const *s, size_t start);
-static char *htmlified_substr(char const *s, size_t lb, size_t ub);
+static void str_dyn_append_s(char **str, size_t *len, size_t *cap, char const *s);
+static void str_dyn_append_c(char **str, size_t *len, size_t *cap, char c);
 static void usage(char const *name);
 
 static conf_t conf;
@@ -354,7 +373,16 @@ gen_any_html(node_t const *node)
 	case NT_O_LIST:
 		gen_o_list_html(node);
 		break;
+	case NT_IMAGE:
+		gen_image_html(node);
+		break;
 	}
+}
+
+static void
+gen_image_html(node_t const *node)
+{
+	fprintf(conf.out_fp, "<img src=\"%s\">\n", node->data);
 }
 
 static void
@@ -429,6 +457,146 @@ gen_u_list_html(node_t const *node)
 	}
 }
 
+static char *
+htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
+{
+	char *sub = calloc(1, sizeof(char));
+	size_t slen = 0, scap = 1;
+	
+	for (size_t i = lb; i < ub; ++i)
+	{
+		// handle special character sequences.
+		if (HS_IS_TEXT(hstate) && s[i] == '<')
+		{
+			str_dyn_append_s(&sub, &slen, &scap, "&lt;");
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate) && s[i] == '>')
+		{
+			str_dyn_append_s(&sub, &slen, &scap, "&gt;");
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate) && s[i] == '&')
+		{
+			str_dyn_append_s(&sub, &slen, &scap, "&amp;");
+			continue;
+		}
+		else if (s[i] == '"')
+		{
+			if (HS_IS_RAW(hstate))
+				str_dyn_append_s(&sub, &slen, &scap, "%22");
+			else
+				str_dyn_append_s(&sub, &slen, &scap, "&quot;");
+			continue;
+		}
+		else if (i < ub - 1 && s[i] == '\\')
+		{
+			// yes, this can allow the user to break out of the imposed
+			// sanitization measures.
+			// no, it is not worth fixing.
+			++i;
+			str_dyn_append_c(&sub, &slen, &scap, s[i]);
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate)
+		         && i < ub - 1
+		         && !strncmp(&s[i], "@[", 2))
+		{
+			++i;
+			str_dyn_append_s(&sub, &slen, &scap, "<a href=\"");
+			hstate |= HS_LINK_REF;
+			continue;
+		}
+		else if (hstate & HS_LINK_REF && s[i] == '|')
+		{
+			hstate &= ~HS_LINK_REF;
+			hstate |= HS_LINK_TEXT;
+			str_dyn_append_s(&sub, &slen, &scap, "\">");
+			continue;
+		}
+		else if (hstate & HS_LINK_TEXT && s[i] == ']')
+		{
+			hstate &= ~HS_LINK_TEXT;
+			str_dyn_append_s(&sub, &slen, &scap, "</a>");
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate) && s[i] == '`')
+		{
+			if (hstate & HS_CODE)
+			{
+				hstate &= ~HS_CODE;
+				str_dyn_append_s(&sub, &slen, &scap, "</code>");
+			}
+			else
+			{
+				hstate |= HS_CODE;
+				str_dyn_append_s(&sub, &slen, &scap, "<code>");
+			}
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate)
+		         && i < ub + 1
+		         && !strncmp(&s[i], "**", 2))
+		{
+			++i;
+			if (hstate & HS_BOLD)
+			{
+				hstate &= ~HS_BOLD;
+				str_dyn_append_s(&sub, &slen, &scap, "</b>");
+			}
+			else
+			{
+				hstate |= HS_BOLD;
+				str_dyn_append_s(&sub, &slen, &scap, "<b>");
+			}
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate) && s[i] == '*')
+		{
+			if (hstate & HS_ITALIC)
+			{
+				hstate &= ~HS_ITALIC;
+				str_dyn_append_s(&sub, &slen, &scap, "</i>");
+			}
+			else
+			{
+				hstate |= HS_ITALIC;
+				str_dyn_append_s(&sub, &slen, &scap, "<i>");
+			}
+			continue;
+		}
+		
+		// if not special, just add the character.
+		{
+			str_dyn_append_c(&sub, &slen, &scap, s[i]);
+		}
+	}
+	
+	// terminate any unterminated HTMLify states.
+	switch (hstate)
+	{
+	case HS_NONE:
+		break;
+	case HS_LINK_REF:
+		str_dyn_append_s(&sub, &slen, &scap, "\"></a>");
+		break;
+	case HS_LINK_TEXT:
+		str_dyn_append_s(&sub, &slen, &scap, "</a>");
+		break;
+	case HS_CODE:
+		str_dyn_append_s(&sub, &slen, &scap, "</code>");
+		break;
+	case HS_ITALIC:
+		str_dyn_append_s(&sub, &slen, &scap, "</i>");
+		break;
+	case HS_BOLD:
+		str_dyn_append_s(&sub, &slen, &scap, "</b>");
+		break;
+	}
+	
+	return sub;
+}
+
 static void
 node_add_child(node_t *node, node_t *child)
 {
@@ -456,6 +624,7 @@ node_print(FILE *fp, node_t const *node, int depth)
 			"NT_U_LIST",
 			"NT_O_LIST",
 			"NT_LIST_ITEM",
+			"NT_IMAGE",
 		};
 		
 		fprintf(fp,
@@ -513,11 +682,10 @@ parse_any(node_t *out, size_t *i)
 		return parse_u_list(out, i);
 	else if (file_data.markup[*i] == '#')
 		return parse_o_list(out, i);
-	else if (!strncmp("    ", &file_data.markup[*i], 4)
-	         || file_data.markup[*i] != '\n')
-	{
+	else if (!strncmp("!()", &file_data.markup[*i], 3))
+		return parse_image(out, i);
+	else if (file_data.markup[*i] != '\n')
 		return parse_paragraph(out, i);
-	}
 	else
 	{
 		++*i;
@@ -541,7 +709,7 @@ parse_doc(node_t *out, size_t *i)
 		while (file_data.markup[*i] && file_data.markup[*i] != '\n')
 			++*i;
 		
-		doc_data.title = htmlified_substr(file_data.markup, begin, *i);
+		doc_data.title = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	}
 	else if (!strncmp("DOC-AUTHOR ", &file_data.markup[*i], 11))
 	{
@@ -556,7 +724,7 @@ parse_doc(node_t *out, size_t *i)
 		while (file_data.markup[*i] && file_data.markup[*i] != '\n')
 			++*i;
 		
-		doc_data.author = htmlified_substr(file_data.markup, begin, *i);
+		doc_data.author = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	}
 	else if (!strncmp("DOC-CREATED ", &file_data.markup[*i], 12))
 	{
@@ -571,7 +739,7 @@ parse_doc(node_t *out, size_t *i)
 		while (file_data.markup[*i] && file_data.markup[*i] != '\n')
 			++*i;
 		
-		doc_data.created = htmlified_substr(file_data.markup, begin, *i);
+		doc_data.created = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	}
 	else if (!strncmp("DOC-REVISED ", &file_data.markup[*i], 12))
 	{
@@ -586,7 +754,7 @@ parse_doc(node_t *out, size_t *i)
 		while (file_data.markup[*i] && file_data.markup[*i] != '\n')
 			++*i;
 		
-		doc_data.revised = htmlified_substr(file_data.markup, begin, *i);
+		doc_data.revised = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	}
 	else
 	{
@@ -595,6 +763,26 @@ parse_doc(node_t *out, size_t *i)
 	}
 	
 	return PS_SKIP;
+}
+
+static parse_status_t
+parse_image(node_t *out, size_t *i)
+{
+	*i += 3;
+	size_t begin = *i;
+	while (file_data.markup[*i] && file_data.markup[*i] != '\n')
+		++*i;
+	
+	*out = (node_t)
+	{
+		.data = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW),
+		.children = NULL,
+		.nchildren = 0,
+		.type = NT_IMAGE,
+		.arg = 0,
+	};
+	
+	return PS_OK;
 }
 
 static parse_status_t
@@ -628,7 +816,7 @@ parse_o_list(node_t *out, size_t *i)
 		
 		node_t item =
 		{
-			.data = htmlified_substr(file_data.markup, begin, *i),
+			.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
 			.children = NULL,
 			.nchildren = 0,
 			.type = NT_LIST_ITEM,
@@ -658,7 +846,7 @@ parse_paragraph(node_t *out, size_t *i)
 	
 	*out = (node_t)
 	{
-		.data = htmlified_substr(file_data.markup, begin, *i),
+		.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
 		.children = NULL,
 		.nchildren = 0,
 		.type = NT_PARAGRAPH,
@@ -684,7 +872,7 @@ parse_title(node_t *out, size_t *i)
 	
 	*out = (node_t)
 	{
-		.data = htmlified_substr(file_data.markup, begin, *i),
+		.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
 		.children = NULL,
 		.nchildren = 0,
 		.type = NT_TITLE,
@@ -725,7 +913,7 @@ parse_u_list(node_t *out, size_t *i)
 		
 		node_t item =
 		{
-			.data = htmlified_substr(file_data.markup, begin, *i),
+			.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
 			.children = NULL,
 			.nchildren = 0,
 			.type = NT_LIST_ITEM,
@@ -777,13 +965,45 @@ single_line(char const *s, size_t start)
 	return buf;
 }
 
-static char *
-htmlified_substr(char const *s, size_t lb, size_t ub)
+static void
+str_dyn_append_s(char **str, size_t *len, size_t *cap, char const *s)
 {
-	// TODO: implement HTMLification.
-	char *sub = calloc(ub - lb + 1, sizeof(char));
-	strncpy(sub, &s[lb], ub - lb);
-	return sub;
+	size_t slen = strlen(s);
+	
+	// grow dynamic string as necessary.
+	{
+		while (*len + slen + 1 >= *cap)
+		{
+			*cap *= 2;
+			*str = realloc(*str, *cap);
+		}
+	}
+	
+	// write new data.
+	{
+		strcpy(&(*str)[*len], s);
+		*len += slen;
+	}
+}
+
+static void
+str_dyn_append_c(char **str, size_t *len, size_t *cap, char c)
+{
+	// grow dynamic string as necessary.
+	{
+		if (*len + 1 >= *cap)
+		{
+			*cap *= 2;
+			*str = realloc(*str, *cap);
+		}
+	}
+	
+	// write new data.
+	{
+		(*str)[*len] = c;
+		(*str)[*len + 1] = 0;
+		++*len;
+	}
 }
 
 static void

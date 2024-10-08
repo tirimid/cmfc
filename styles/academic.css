@@ -52,6 +52,20 @@ p {
 	margin: 0 auto;
 }
 
+img {
+	max-height: 100%;
+	max-width: 100%;
+}
+
+a {
+	color: #00779f;
+}
+
+a:hover {
+	background-color: #00779f;
+	color: #fffff1;
+}
+
 .doc-title {
 	font-size: 7ch;
 	font-family: serif;

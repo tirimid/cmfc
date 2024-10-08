@@ -68,4 +68,15 @@ being simple to write.
 
     Example text.
 
+==Text modifiers (links etc.)
+
+    This is a @[https://tirimid.net|link] to my website. This is
+`a_piece(of, code);`. This is *italicized in a fun way*. And this one *is
+italicized, but even @[https://tirimid.net|links to my website, with some
+`code()` in it]* and it seems to work... Now here is `some += code_snippets -
+with.@[https://tirimid.net|links].in_them;`. Human... I remember you're
+**genocides**.
+
 ==Images
+
+!()https://tirimid.net/res/gamingfumo.png
