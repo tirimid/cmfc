@@ -13,6 +13,9 @@ typedef enum node_type
 	NT_ROOT = 0,
 	NT_TITLE,
 	NT_PARAGRAPH,
+	NT_U_LIST,
+	NT_O_LIST,
+	NT_LIST_ITEM,
 } node_type_t;
 
 typedef enum parse_status
@@ -69,15 +72,19 @@ static int doc_data_verify(void);
 static int file_data_read(void);
 static void gen_html(void);
 static void gen_any_html(node_t const *node);
+static void gen_o_list_html(node_t const *node);
 static void gen_paragraph_html(node_t const *node);
 static void gen_title_html(node_t const *node);
+static void gen_u_list_html(node_t const *node);
 static void node_add_child(node_t *node, node_t *child);
 static void node_print(FILE *fp, node_t const *node, int depth);
 static int parse(void);
 static parse_status_t parse_any(node_t *out, size_t *i);
 static parse_status_t parse_doc(node_t *out, size_t *i);
+static parse_status_t parse_o_list(node_t *out, size_t *i);
 static parse_status_t parse_paragraph(node_t *out, size_t *i);
 static parse_status_t parse_title(node_t *out, size_t *i);
+static parse_status_t parse_u_list(node_t *out, size_t *i);
 static void prog_err(size_t start, char const *msg);
 static char const *single_line(char const *s, size_t start);
 static char *htmlified_substr(char const *s, size_t lb, size_t ub);
@@ -341,6 +348,36 @@ gen_any_html(node_t const *node)
 	case NT_PARAGRAPH:
 		gen_paragraph_html(node);
 		break;
+	case NT_U_LIST:
+		gen_u_list_html(node);
+		break;
+	case NT_O_LIST:
+		gen_o_list_html(node);
+		break;
+	}
+}
+
+static void
+gen_o_list_html(node_t const *node)
+{
+	int cur_depth = 0;
+	for (size_t i = 0; i < node->nchildren; ++i)
+	{
+		int dd = node->children[i].arg - cur_depth;
+		while (dd > 0)
+		{
+			fprintf(conf.out_fp, "<ol>\n");
+			--dd;
+		}
+		while (dd < 0)
+		{
+			fprintf(conf.out_fp, "</ol>\n");
+			++dd;
+		}
+		
+		fprintf(conf.out_fp, "<li>%s</li>\n", node->children[i].data);
+		
+		cur_depth = node->children[i].arg;
 	}
 }
 
@@ -354,6 +391,30 @@ static void
 gen_title_html(node_t const *node)
 {
 	fprintf(conf.out_fp, "<h%d>%s</h%d>\n", node->arg, node->data, node->arg);
+}
+
+static void
+gen_u_list_html(node_t const *node)
+{
+	int cur_depth = 0;
+	for (size_t i = 0; i < node->nchildren; ++i)
+	{
+		int dd = node->children[i].arg - cur_depth;
+		while (dd > 0)
+		{
+			fprintf(conf.out_fp, "<ul>\n");
+			--dd;
+		}
+		while (dd < 0)
+		{
+			fprintf(conf.out_fp, "</ul>\n");
+			++dd;
+		}
+		
+		fprintf(conf.out_fp, "<li>%s</li>\n", node->children[i].data);
+		
+		cur_depth = node->children[i].arg;
+	}
 }
 
 static void
@@ -380,11 +441,15 @@ node_print(FILE *fp, node_t const *node, int depth)
 			"NT_ROOT",
 			"NT_TITLE",
 			"NT_PARAGRAPH",
+			"NT_U_LIST",
+			"NT_O_LIST",
+			"NT_LIST_ITEM",
 		};
 		
 		fprintf(fp,
-		        "%s: %s\n",
+		        "%s: %d - %s\n",
 		        type_lut[node->type],
+		        node->arg,
 		        node->data ? node->data : "-");
 	}
 	
@@ -432,6 +497,10 @@ parse_any(node_t *out, size_t *i)
 		return parse_doc(out, i);
 	else if (file_data.markup[*i] == '=')
 		return parse_title(out, i);
+	else if (file_data.markup[*i] == '*')
+		return parse_u_list(out, i);
+	else if (file_data.markup[*i] == '#')
+		return parse_o_list(out, i);
 	else if (!strncmp("    ", &file_data.markup[*i], 4)
 	         || file_data.markup[*i] != '\n')
 	{
@@ -517,9 +586,56 @@ parse_doc(node_t *out, size_t *i)
 }
 
 static parse_status_t
+parse_o_list(node_t *out, size_t *i)
+{
+	*out = (node_t)
+	{
+		.data = NULL,
+		.children = NULL,
+		.nchildren = 0,
+		.type = NT_O_LIST,
+		.arg = 0,
+	};
+	
+	for (;;)
+	{
+		int depth = 0;
+		while (file_data.markup[*i] == '#')
+		{
+			++*i;
+			++depth;
+		}
+		
+		size_t begin = *i;
+		while (file_data.markup[*i]
+		       && strncmp("\n\n", &file_data.markup[*i], 2)
+		       && strncmp("\n#", &file_data.markup[*i], 2))
+		{
+			++*i;
+		}
+		
+		node_t item =
+		{
+			.data = htmlified_substr(file_data.markup, begin, *i),
+			.children = NULL,
+			.nchildren = 0,
+			.type = NT_LIST_ITEM,
+			.arg = depth,
+		};
+		node_add_child(out, &item);
+		
+		++*i;
+		if (*i >= file_data.markup_len || file_data.markup[*i] == '\n')
+			break;
+	}
+	
+	return PS_OK;
+}
+
+static parse_status_t
 parse_paragraph(node_t *out, size_t *i)
 {
-	*i += !strncmp("    ", &file_data.markup[*i], 4);
+	*i += 4 * !strncmp("    ", &file_data.markup[*i], 4);
 	size_t begin = *i;
 	while (file_data.markup[*i]
 	       && strncmp("\n\n", &file_data.markup[*i], 2)
@@ -562,6 +678,53 @@ parse_title(node_t *out, size_t *i)
 		.type = NT_TITLE,
 		.arg = hsize,
 	};
+	
+	return PS_OK;
+}
+
+static parse_status_t
+parse_u_list(node_t *out, size_t *i)
+{
+	*out = (node_t)
+	{
+		.data = NULL,
+		.children = NULL,
+		.nchildren = 0,
+		.type = NT_U_LIST,
+		.arg = 0,
+	};
+	
+	for (;;)
+	{
+		int depth = 0;
+		while (file_data.markup[*i] == '*')
+		{
+			++*i;
+			++depth;
+		}
+		
+		size_t begin = *i;
+		while (file_data.markup[*i]
+		       && strncmp("\n\n", &file_data.markup[*i], 2)
+		       && strncmp("\n*", &file_data.markup[*i], 2))
+		{
+			++*i;
+		}
+		
+		node_t item =
+		{
+			.data = htmlified_substr(file_data.markup, begin, *i),
+			.children = NULL,
+			.nchildren = 0,
+			.type = NT_LIST_ITEM,
+			.arg = depth,
+		};
+		node_add_child(out, &item);
+		
+		++*i;
+		if (*i >= file_data.markup_len || file_data.markup[*i] == '\n')
+			break;
+	}
 	
 	return PS_OK;
 }

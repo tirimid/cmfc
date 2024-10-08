@@ -27,3 +27,19 @@ ullam nesciunt qui velit totam. Cumque quo illum qui et eos.
     CMF stands for Custom Markup Format. It is designed for easy publishing to
 my personal site. It is also designed to be readable in plaintext form, while
 being simple to write.
+
+==Unordered lists
+
+*This is an unordered list
+*Lorem ipsum
+**Dolor sit amet
+**Consectetur, in modi beatae
+*It's all Greek to me
+
+==Ordered lists
+
+#This is an unordered list
+#Lorem ipsum
+##Dolor sit amet
+##Consectetur, in modi beatae
+#It's all Greek to me
