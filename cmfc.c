@@ -254,15 +254,9 @@ doc_data_verify(void)
 			return 1;
 		}
 		
-		if (!doc_data.author)
+		if (doc_data.revised && !doc_data.created)
 		{
-			fprintf(stderr, "err: document missing an author!\n");
-			return 1;
-		}
-		
-		if (!doc_data.created)
-		{
-			fprintf(stderr, "err: document missing a creation date!\n");
+			fprintf(stderr, "err: document missing a creation date, only revision provided!\n");
 			return 1;
 		}
 	}
@@ -330,19 +324,24 @@ gen_html(void)
 		        "<style>%s</style>\n"
 		        "</head>\n"
 		        "<body>\n"
-		        "<div class=\"doc-title\">%s</div>\n"
-		        "<div class=\"doc-author\">%s</div>\n"
-		        "<div class=\"doc-date\">%s",
+		        "<div class=\"doc-title\">%s</div>\n",
 		        doc_data.title,
 		        conf.style_file ? file_data.style : "",
-		        doc_data.title,
-		        doc_data.author,
-		        doc_data.created);
+		        doc_data.title);
 		
-		if (doc_data.revised)
-			fprintf(conf.out_fp, " (rev. %s)", doc_data.revised);
+		// write out author.
+		if (doc_data.author)
+			fprintf(conf.out_fp, "<div class=\"doc-author\">%s</div>\n", doc_data.author);
 		
-		fprintf(conf.out_fp, "</div>\n");
+		// write out creation / revision date.
+		{
+			if (doc_data.created)
+				fprintf(conf.out_fp, "<div class=\"doc-date\">%s", doc_data.created);
+			if (doc_data.revised)
+				fprintf(conf.out_fp, " (rev. %s)", doc_data.revised);
+			if (doc_data.created)
+				fprintf(conf.out_fp, "</div>\n");
+		}
 	}
 	
 	// write out document contents.
