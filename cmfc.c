@@ -20,6 +20,7 @@ typedef enum node_type
 	NT_O_LIST,
 	NT_LIST_ITEM,
 	NT_IMAGE,
+	NT_BLOCKQUOTE,
 } node_type_t;
 
 typedef enum parse_status
@@ -87,6 +88,7 @@ static int doc_data_verify(void);
 static int file_data_read(void);
 static void gen_html(void);
 static void gen_any_html(node_t const *node);
+static void gen_blockquote_html(node_t const *node);
 static void gen_image_html(node_t const *node);
 static void gen_o_list_html(node_t const *node);
 static void gen_paragraph_html(node_t const *node);
@@ -97,6 +99,7 @@ static void node_add_child(node_t *node, node_t *child);
 static void node_print(FILE *fp, node_t const *node, int depth);
 static int parse(void);
 static parse_status_t parse_any(node_t *out, size_t *i);
+static parse_status_t parse_blockquote(node_t *out, size_t *i);
 static parse_status_t parse_doc(node_t *out, size_t *i);
 static parse_status_t parse_image(node_t *out, size_t *i);
 static parse_status_t parse_o_list(node_t *out, size_t *i);
@@ -376,7 +379,16 @@ gen_any_html(node_t const *node)
 	case NT_IMAGE:
 		gen_image_html(node);
 		break;
+	case NT_BLOCKQUOTE:
+		gen_blockquote_html(node);
+		break;
 	}
+}
+
+static void
+gen_blockquote_html(node_t const *node)
+{
+	fprintf(conf.out_fp, "<blockquote>%s</blockquote>\n", node->data);
 }
 
 static void
@@ -625,10 +637,11 @@ node_print(FILE *fp, node_t const *node, int depth)
 			"NT_O_LIST",
 			"NT_LIST_ITEM",
 			"NT_IMAGE",
+			"NT_BLOCKQUOTE",
 		};
 		
 		fprintf(fp,
-		        "%s: %d - %s\n",
+		        "%s: %d %s\n",
 		        type_lut[node->type],
 		        node->arg,
 		        node->data ? node->data : "-");
@@ -684,6 +697,8 @@ parse_any(node_t *out, size_t *i)
 		return parse_o_list(out, i);
 	else if (!strncmp("!()", &file_data.markup[*i], 3))
 		return parse_image(out, i);
+	else if (!strncmp("      ", &file_data.markup[*i], 6))
+		return parse_blockquote(out, i);
 	else if (file_data.markup[*i] != '\n')
 		return parse_paragraph(out, i);
 	else
@@ -691,6 +706,28 @@ parse_any(node_t *out, size_t *i)
 		++*i;
 		return PS_SKIP;
 	}
+}
+
+static parse_status_t
+parse_blockquote(node_t *out, size_t *i)
+{
+	*i += 6;
+	size_t begin = *i;
+	while (file_data.markup[*i] && strncmp("\n\n", &file_data.markup[*i], 2))
+	{
+		++*i;
+	}
+	
+	*out = (node_t)
+	{
+		.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
+		.children = NULL,
+		.nchildren = 0,
+		.type = NT_BLOCKQUOTE,
+		.arg = 0,
+	};
+	
+	return PS_OK;
 }
 
 static parse_status_t

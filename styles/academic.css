@@ -48,7 +48,7 @@ li {
 p {
 	font-family: serif;
 	text-align: justify;
-	text-indent: 6ch;
+	text-indent: 4ch;
 	margin: 0 auto;
 }
 
@@ -64,6 +64,16 @@ a {
 a:hover {
 	background-color: #00779f;
 	color: #fffff1;
+}
+
+blockquote {
+	font-family: serif;
+	text-align: justify;
+	text-indent: 0ch;
+	margin: 0 auto;
+	padding-left: 6ch;
+	padding-top: 1ch;
+	padding-bottom: 1ch;
 }
 
 .doc-title {
