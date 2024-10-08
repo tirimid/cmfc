@@ -379,6 +379,12 @@ gen_o_list_html(node_t const *node)
 		
 		cur_depth = node->children[i].arg;
 	}
+	
+	while (cur_depth > 0)
+	{
+		fprintf(conf.out_fp, "</ol>\n");
+		--cur_depth;
+	}
 }
 
 static void
@@ -414,6 +420,12 @@ gen_u_list_html(node_t const *node)
 		fprintf(conf.out_fp, "<li>%s</li>\n", node->children[i].data);
 		
 		cur_depth = node->children[i].arg;
+	}
+	
+	while (cur_depth > 0)
+	{
+		fprintf(conf.out_fp, "</ul>\n");
+		--cur_depth;
 	}
 }
 

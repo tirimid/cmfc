@@ -1,4 +1,4 @@
-DOC-TITLE Hello
+DOC-TITLE Hello World - Simple CMFC Test
 DOC-AUTHOR tirimid
 DOC-CREATED 2024-10-07
 DOC-REVISED 2024-11-23
@@ -43,3 +43,29 @@ being simple to write.
 ##Dolor sit amet
 ##Consectetur, in modi beatae
 #It's all Greek to me
+
+=Header 1
+
+    Example text.
+
+==Header 2
+
+    Example text.
+
+===Header 3
+
+    Example text.
+
+====Header 4
+
+    Example text.
+
+=====Header 5
+
+    Example text.
+
+======Header 6
+
+    Example text.
+
+==Images

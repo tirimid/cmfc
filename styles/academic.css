@@ -19,7 +19,24 @@ h1, h2, h3, h4, h5, h6 {
 
 h2, h3, h4, h5, h6 {
 	font-weight: normal;
-	font-style: italic;
+}
+
+h1 {
+	padding-top: 1ch;
+	font-size: 4.5ch;
+	font-weight: bold;
+}
+
+h2 {
+	font-size: 3ch;
+}
+
+h3 {
+	font-size: 2.5ch;
+}
+
+h4, h5, h6 {
+	font-size: 2ch;
 }
 
 li {
@@ -36,8 +53,9 @@ p {
 }
 
 .doc-title {
-	font-size: 8ch;
+	font-size: 7ch;
 	font-family: serif;
+	text-align: center;
 }
 
 .doc-author, .doc-date {
