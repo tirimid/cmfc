@@ -21,6 +21,9 @@ typedef enum node_type
 	NT_LIST_ITEM,
 	NT_IMAGE,
 	NT_BLOCKQUOTE,
+	NT_TABLE,
+	NT_TABLE_ROW,
+	NT_TABLE_ITEM,
 } node_type_t;
 
 typedef enum parse_status
@@ -92,6 +95,7 @@ static void gen_blockquote_html(node_t const *node);
 static void gen_image_html(node_t const *node);
 static void gen_o_list_html(node_t const *node);
 static void gen_paragraph_html(node_t const *node);
+static void gen_table_html(node_t const *node);
 static void gen_title_html(node_t const *node);
 static void gen_u_list_html(node_t const *node);
 static char *htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate);
@@ -104,6 +108,8 @@ static parse_status_t parse_doc(node_t *out, size_t *i);
 static parse_status_t parse_image(node_t *out, size_t *i);
 static parse_status_t parse_o_list(node_t *out, size_t *i);
 static parse_status_t parse_paragraph(node_t *out, size_t *i);
+static parse_status_t parse_table(node_t *out, size_t *i);
+static parse_status_t parse_table_row(node_t *out, size_t *i);
 static parse_status_t parse_title(node_t *out, size_t *i);
 static parse_status_t parse_u_list(node_t *out, size_t *i);
 static void prog_err(size_t start, char const *msg);
@@ -114,8 +120,8 @@ static void usage(char const *name);
 
 static conf_t conf;
 static doc_data_t doc_data;
+static node_t doc_root;
 static file_data_t file_data;
-static node_t root;
 
 int
 main(int argc, char const *argv[])
@@ -134,7 +140,7 @@ main(int argc, char const *argv[])
 	
 	if (conf.dump_ast)
 	{
-		node_print(conf.out_fp, &root, 0);
+		node_print(conf.out_fp, &doc_root, 0);
 		return 0;
 	}
 	
@@ -344,10 +350,10 @@ gen_html(void)
 		}
 	}
 	
-	// write out document contents.
+	// write out document contents and footnotes.
 	{
-		for (size_t i = 0; i < root.nchildren; ++i)
-			gen_any_html(&root.children[i]);
+		for (size_t i = 0; i < doc_root.nchildren; ++i)
+			gen_any_html(&doc_root.children[i]);
 	}
 	
 	// write out postamble.
@@ -380,6 +386,9 @@ gen_any_html(node_t const *node)
 		break;
 	case NT_BLOCKQUOTE:
 		gen_blockquote_html(node);
+		break;
+	case NT_TABLE:
+		gen_table_html(node);
 		break;
 	}
 }
@@ -430,6 +439,24 @@ static void
 gen_paragraph_html(node_t const *node)
 {
 	fprintf(conf.out_fp, "<p>%s</p>\n", node->data);
+}
+
+static void
+gen_table_html(node_t const *node)
+{
+	fprintf(conf.out_fp, "<table>\n");
+	for (size_t row = 0; row < node->nchildren; ++row)
+	{
+		fprintf(conf.out_fp, "<tr>\n");
+		for (size_t col = 0; col < node->children[row].nchildren; ++col)
+		{
+			fprintf(conf.out_fp,
+			        "<td>%s</td>\n",
+			        node->children[row].children[col].data);
+		}
+		fprintf(conf.out_fp, "</tr>\n");
+	}
+	fprintf(conf.out_fp, "</table>\n");
 }
 
 static void
@@ -637,6 +664,9 @@ node_print(FILE *fp, node_t const *node, int depth)
 			"NT_LIST_ITEM",
 			"NT_IMAGE",
 			"NT_BLOCKQUOTE",
+			"NT_TABLE",
+			"NT_TABLE_ROW",
+			"NT_TABLE_ITEM",
 		};
 		
 		fprintf(fp,
@@ -656,7 +686,7 @@ node_print(FILE *fp, node_t const *node, int depth)
 static int
 parse(void)
 {
-	root = (node_t)
+	doc_root = (node_t)
 	{
 		.data = NULL,
 		.children = NULL,
@@ -671,7 +701,7 @@ parse(void)
 		switch (rc)
 		{
 		case PS_OK:
-			node_add_child(&root, &child);
+			node_add_child(&doc_root, &child);
 			break;
 		case PS_ERR:
 			return 1;
@@ -694,6 +724,8 @@ parse_any(node_t *out, size_t *i)
 		return parse_u_list(out, i);
 	else if (file_data.markup[*i] == '#')
 		return parse_o_list(out, i);
+	else if (!strncmp("---", &file_data.markup[*i], 3))
+		return parse_table(out, i);
 	else if (!strncmp("!()", &file_data.markup[*i], 3))
 		return parse_image(out, i);
 	else if (!strncmp("      ", &file_data.markup[*i], 6))
@@ -893,13 +925,163 @@ parse_paragraph(node_t *out, size_t *i)
 }
 
 static parse_status_t
+parse_table(node_t *out, size_t *i)
+{
+	// validate beginning of table.
+	{
+		size_t table_begin = *i;
+		while (file_data.markup[*i] && file_data.markup[*i] == '-')
+			++*i;
+		if (file_data.markup[*i] != '\n')
+		{
+			prog_err(*i, "expected valid table after ---!");
+			return PS_ERR;
+		}
+	}
+	
+	*out = (node_t)
+	{
+		.data = NULL,
+		.children = NULL,
+		.nchildren = 0,
+		.type = NT_TABLE,
+		.arg = 0,
+	};
+	
+	for (++*i; file_data.markup[*i] && file_data.markup[*i] != '\n';)
+	{
+		if (file_data.markup[*i] == '|')
+		{
+			node_t row;
+			if (parse_table_row(&row, i))
+				return PS_ERR;
+			node_add_child(out, &row);
+		}
+		else
+		{
+			prog_err(*i, "expected either | or table end!");
+			return PS_ERR;
+		}
+	}
+
+	return PS_OK;
+}
+
+static parse_status_t
+parse_table_row(node_t *out, size_t *i)
+{
+	*out = (node_t)
+	{
+		.data = NULL,
+		.children = NULL,
+		.nchildren = 0,
+		.type = NT_TABLE_ROW,
+		.arg = 0,
+	};
+	
+	++*i;
+	size_t col = 0;
+	for (;;)
+	{
+		size_t begin = *i;
+		while (file_data.markup[*i] && file_data.markup[*i] != '|')
+		{
+			if (*i < file_data.markup_len + 1
+			    && file_data.markup[*i] == '\\')
+			{
+				++*i;
+			}
+			++*i;
+		}
+		if (!file_data.markup[*i])
+		{
+			prog_err(*i, "incomplete table row data!");
+			return PS_ERR;
+		}
+		
+		char *sub = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		if (col >= out->nchildren)
+		{
+			node_t item =
+			{
+				.data = sub,
+				.children = NULL,
+				.nchildren = 0,
+				.type = NT_TABLE_ITEM,
+				.arg = 0,
+			};
+			node_add_child(out, &item);
+		}
+		else
+		{
+			size_t slen = strlen(out->children[col].data);
+			size_t scap = slen + 1;
+			str_dyn_append_c(&out->children[col].data, &slen, &scap, ' ');
+			str_dyn_append_s(&out->children[col].data, &slen, &scap, sub);
+			free(sub);
+		}
+		
+		++*i;
+		if (file_data.markup[*i] == '\n')
+		{
+			++*i;
+			col = 0;
+			if (!file_data.markup[*i])
+			{
+				prog_err(*i, "unterminated table row!");
+				return PS_ERR;
+			}
+			else if (file_data.markup[*i] == '-')
+			{
+				while (file_data.markup[*i]
+				       && file_data.markup[*i] == '-')
+				{
+					++*i;
+				}
+				
+				if (file_data.markup[*i]
+				    && file_data.markup[*i] != '\n')
+				{
+					prog_err(*i, "table row improperly terminated!");
+					return PS_ERR;
+				}
+				
+				++*i;
+				break;
+			}
+			else if (file_data.markup[*i] == '|')
+				++*i;
+			else
+			{
+				prog_err(*i, "expected row to either terminate or continue!");
+				return PS_ERR;
+			}
+		}
+		else
+			++col;
+	}
+	
+	return PS_OK;
+}
+
+static parse_status_t
 parse_title(node_t *out, size_t *i)
 {
+	// get and validate header size.
 	int hsize = 0;
-	while (file_data.markup[*i] == '=')
 	{
-		++*i;
-		++hsize;
+		size_t title_begin = *i;
+		while (file_data.markup[*i] == '=')
+		{
+			++*i;
+			++hsize;
+		}
+		
+		if (hsize > 6)
+		{
+			prog_err(title_begin, "minimum title size is 6!");
+			return PS_ERR;
+		}
 	}
 	
 	size_t begin = *i;

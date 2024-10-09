@@ -89,3 +89,34 @@ with.@[https://tirimid.net|links].in_them;`. Human... I remember you're
 ==Images
 
 !()https://tirimid.net/res/gamingfumo.png
+
+==Tables
+
+------------
+|-|A |B |C |
+------------
+|1|A1|B1|C1|
+------------
+|2|A2|B2|C2|
+------------
+|3|A3|B3|C3|
+------------
+
+---------------------------------------------
+|Lorem                |Ipsum                |
+---------------------------------------------
+|Lorem ipsum dolor sit|Lorem ipsum dolor sit|
+|amet, consectetur    |amet, consectetur    |
+|adipiscing elit, sed |adipiscing elit, sed |
+|do eiusmod tempor    |do eiusmod tempor    |
+|incididunt ut labore |incididunt ut labore |
+|et dolore magna      |et dolore magna      |
+|aliqua.              |aliqua.              |
+---------------------------------------------
+|Ut enim ad minim     |Ut enim ad minim     |
+|veniam, quis nostrud |veniam, quis nostrud |
+|exercitation ullamco |exercitation ullamco |
+|laboris nisi ut      |laboris nisi ut      |
+|aliquip ex ea commodo|aliquip ex ea commodo|
+|consequat.           |consequat.           |
+---------------------------------------------
