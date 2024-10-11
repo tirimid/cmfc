@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 #define HS_IS_TEXT(hstate) !HS_IS_RAW(hstate)
-#define HS_IS_RAW(hstate) ((hstate) & (HS_LINK_REF | HS_FORCE_RAW))
+#define HS_IS_RAW(hstate) ((hstate) & (HS_LINK_REF | HS_FORCE_RAW | HS_FOOTNOTE))
 
 typedef enum node_type
 {
@@ -24,6 +24,7 @@ typedef enum node_type
 	NT_TABLE,
 	NT_TABLE_ROW,
 	NT_TABLE_ITEM,
+	NT_FOOTNOTE,
 } node_type_t;
 
 typedef enum parse_status
@@ -35,13 +36,14 @@ typedef enum parse_status
 
 typedef enum htmlify_state
 {
-	HS_NONE = 0,
+	HS_NONE = 0x0,
 	HS_LINK_REF = 0x1,
 	HS_LINK_TEXT = 0x2,
 	HS_CODE = 0x4,
 	HS_ITALIC = 0x8,
 	HS_BOLD = 0x10,
 	HS_FORCE_RAW = 0x20,
+	HS_FOOTNOTE = 0x40,
 } htmlify_state_t;
 
 typedef struct conf
@@ -90,8 +92,8 @@ static void conf_quit(void);
 static int doc_data_verify(void);
 static int file_data_read(void);
 static void gen_html(void);
-static void gen_any_html(node_t const *node);
 static void gen_blockquote_html(node_t const *node);
+static void gen_footnote_html(node_t const *node);
 static void gen_image_html(node_t const *node);
 static void gen_o_list_html(node_t const *node);
 static void gen_paragraph_html(node_t const *node);
@@ -105,6 +107,7 @@ static int parse(void);
 static parse_status_t parse_any(node_t *out, size_t *i);
 static parse_status_t parse_blockquote(node_t *out, size_t *i);
 static parse_status_t parse_doc(node_t *out, size_t *i);
+static parse_status_t parse_footnote(node_t *out, size_t *i);
 static parse_status_t parse_image(node_t *out, size_t *i);
 static parse_status_t parse_o_list(node_t *out, size_t *i);
 static parse_status_t parse_paragraph(node_t *out, size_t *i);
@@ -353,7 +356,35 @@ gen_html(void)
 	// write out document contents and footnotes.
 	{
 		for (size_t i = 0; i < doc_root.nchildren; ++i)
-			gen_any_html(&doc_root.children[i]);
+		{
+			switch (doc_root.children[i].type)
+			{
+			case NT_TITLE:
+				gen_title_html(&doc_root.children[i]);
+				break;
+			case NT_PARAGRAPH:
+				gen_paragraph_html(&doc_root.children[i]);
+				break;
+			case NT_U_LIST:
+				gen_u_list_html(&doc_root.children[i]);
+				break;
+			case NT_O_LIST:
+				gen_o_list_html(&doc_root.children[i]);
+				break;
+			case NT_IMAGE:
+				gen_image_html(&doc_root.children[i]);
+				break;
+			case NT_BLOCKQUOTE:
+				gen_blockquote_html(&doc_root.children[i]);
+				break;
+			case NT_TABLE:
+				gen_table_html(&doc_root.children[i]);
+				break;
+			case NT_FOOTNOTE:
+				gen_footnote_html(&doc_root.children[i]);
+				break;
+			}
+		}
 	}
 	
 	// write out postamble.
@@ -365,38 +396,15 @@ gen_html(void)
 }
 
 static void
-gen_any_html(node_t const *node)
-{
-	switch (node->type)
-	{
-	case NT_TITLE:
-		gen_title_html(node);
-		break;
-	case NT_PARAGRAPH:
-		gen_paragraph_html(node);
-		break;
-	case NT_U_LIST:
-		gen_u_list_html(node);
-		break;
-	case NT_O_LIST:
-		gen_o_list_html(node);
-		break;
-	case NT_IMAGE:
-		gen_image_html(node);
-		break;
-	case NT_BLOCKQUOTE:
-		gen_blockquote_html(node);
-		break;
-	case NT_TABLE:
-		gen_table_html(node);
-		break;
-	}
-}
-
-static void
 gen_blockquote_html(node_t const *node)
 {
 	fprintf(conf.out_fp, "<blockquote>%s</blockquote>\n", node->data);
+}
+
+static void
+gen_footnote_html(node_t const *node)
+{
+	fprintf(conf.out_fp, "<div class=\"footnote\" id=\"%s\"><b>%s</b>: %s</div>\n", node->data, node->data, node->children[0].data);
 }
 
 static void
@@ -519,6 +527,11 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 			str_dyn_append_s(&sub, &slen, &scap, "&amp;");
 			continue;
 		}
+		else if (HS_IS_RAW(hstate) && s[i] == '#')
+		{
+			str_dyn_append_s(&sub, &slen, &scap, "%23");
+			continue;
+		}
 		else if (s[i] == '"')
 		{
 			if (HS_IS_RAW(hstate))
@@ -527,7 +540,7 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 				str_dyn_append_s(&sub, &slen, &scap, "&quot;");
 			continue;
 		}
-		else if (i < ub - 1 && s[i] == '\\')
+		else if (i + 1 < ub && s[i] == '\\')
 		{
 			// yes, this can allow the user to break out of the imposed
 			// sanitization measures.
@@ -537,12 +550,21 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 			continue;
 		}
 		else if (HS_IS_TEXT(hstate)
-		         && i < ub - 1
+		         && i + 1 < ub
 		         && !strncmp(&s[i], "@[", 2))
 		{
 			++i;
 			str_dyn_append_s(&sub, &slen, &scap, "<a href=\"");
 			hstate |= HS_LINK_REF;
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate)
+		         && i + 1 < ub
+		         && !strncmp(&s[i], "[^", 2))
+		{
+			++i;
+			str_dyn_append_s(&sub, &slen, &scap, "<sup><a href=\"#");
+			hstate |= HS_FOOTNOTE;
 			continue;
 		}
 		else if (hstate & HS_LINK_REF && s[i] == '|')
@@ -556,6 +578,28 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 		{
 			hstate &= ~HS_LINK_TEXT;
 			str_dyn_append_s(&sub, &slen, &scap, "</a>");
+			continue;
+		}
+		else if (hstate & HS_FOOTNOTE && s[i] == ']')
+		{
+			// footnote name will need to be duplicated.
+			size_t dup_len = 0;
+			size_t dup_ind = slen;
+			while (sub[dup_ind - 1] != '#')
+			{
+				--dup_ind;
+				++dup_len;
+			}
+			
+			char *dup = calloc(dup_len + 1, sizeof(char));
+			strncpy(dup, &sub[dup_ind], dup_len);
+			
+			hstate &= ~HS_FOOTNOTE;
+			str_dyn_append_s(&sub, &slen, &scap, "\">[");
+			str_dyn_append_s(&sub, &slen, &scap, dup);
+			str_dyn_append_s(&sub, &slen, &scap, "]</a></sup>");
+			
+			free(dup);
 			continue;
 		}
 		else if (HS_IS_TEXT(hstate) && s[i] == '`')
@@ -573,7 +617,7 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 			continue;
 		}
 		else if (HS_IS_TEXT(hstate)
-		         && i < ub + 1
+		         && i + 1 < ub
 		         && !strncmp(&s[i], "**", 2))
 		{
 			++i;
@@ -667,6 +711,7 @@ node_print(FILE *fp, node_t const *node, int depth)
 			"NT_TABLE",
 			"NT_TABLE_ROW",
 			"NT_TABLE_ITEM",
+			"NT_FOOTNOTE",
 		};
 		
 		fprintf(fp,
@@ -724,12 +769,14 @@ parse_any(node_t *out, size_t *i)
 		return parse_u_list(out, i);
 	else if (file_data.markup[*i] == '#')
 		return parse_o_list(out, i);
+	else if (!strncmp("      ", &file_data.markup[*i], 6))
+		return parse_blockquote(out, i);
 	else if (!strncmp("---", &file_data.markup[*i], 3))
 		return parse_table(out, i);
 	else if (!strncmp("!()", &file_data.markup[*i], 3))
 		return parse_image(out, i);
-	else if (!strncmp("      ", &file_data.markup[*i], 6))
-		return parse_blockquote(out, i);
+	else if (!strncmp("[^", &file_data.markup[*i], 2))
+		return parse_footnote(out, i);
 	else if (file_data.markup[*i] != '\n')
 		return parse_paragraph(out, i);
 	else
@@ -831,6 +878,37 @@ parse_doc(node_t *out, size_t *i)
 	}
 	
 	return PS_SKIP;
+}
+
+static parse_status_t
+parse_footnote(node_t *out, size_t *i)
+{
+	*i += 2;
+	size_t begin = *i;
+	while (file_data.markup[*i] && file_data.markup[*i] != ']')
+	{
+		if (*i + 1 < file_data.markup_len && file_data.markup[*i] == '\\')
+			++*i;
+		++*i;
+	}
+	
+	*out = (node_t)
+	{
+		.data = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW),
+		.children = NULL,
+		.nchildren = 0,
+		.type = NT_FOOTNOTE,
+		.arg = 0,
+	};
+	
+	++*i;
+	node_t text;
+	if (parse_paragraph(&text, i))
+		return PS_ERR;
+	
+	node_add_child(out, &text);
+	
+	return PS_OK;
 }
 
 static parse_status_t
@@ -986,7 +1064,7 @@ parse_table_row(node_t *out, size_t *i)
 		size_t begin = *i;
 		while (file_data.markup[*i] && file_data.markup[*i] != '|')
 		{
-			if (*i < file_data.markup_len + 1
+			if (*i + 1 < file_data.markup_len
 			    && file_data.markup[*i] == '\\')
 			{
 				++*i;

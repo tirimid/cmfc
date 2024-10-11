@@ -35,7 +35,11 @@ ullam nesciunt qui velit totam. Cumque quo illum qui et eos.
 
     CMF stands for Custom Markup Format. It is designed for easy publishing to
 my personal site. It is also designed to be readable in plaintext form, while
-being simple to write.
+being simple to write[^1][^named].
+
+[^1]Footnotes look like this
+
+[^named]And they can be named
 
 ==Unordered lists
 
