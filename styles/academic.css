@@ -88,6 +88,15 @@ a:hover {
 	color: #fffff1;
 }
 
+.long-code {
+	font-family: monospace;
+	margin: 1ch;
+	padding: 2ch;
+	background-color: #e7e7ee;
+	white-space: pre-wrap;
+	tab-size: 6;
+}
+
 blockquote {
 	font-family: serif;
 	text-align: justify;

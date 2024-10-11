@@ -27,6 +27,7 @@ typedef enum node_type
 	NT_TABLE_ROW,
 	NT_TABLE_ITEM,
 	NT_FOOTNOTE,
+	NT_LONG_CODE,
 } node_type_t;
 
 typedef enum parse_status
@@ -102,6 +103,7 @@ static void gen_html(void);
 static void gen_blockquote_html(node_t const *node);
 static void gen_footnote_html(node_t const *node);
 static void gen_image_html(node_t const *node);
+static void gen_long_code_html(node_t const *node);
 static void gen_o_list_html(node_t const *node);
 static void gen_paragraph_html(node_t const *node);
 static void gen_table_html(node_t const *node);
@@ -116,6 +118,7 @@ static parse_status_t parse_blockquote(node_t *out, size_t *i);
 static parse_status_t parse_doc(node_t *out, size_t *i);
 static parse_status_t parse_footnote(node_t *out, size_t *i);
 static parse_status_t parse_image(node_t *out, size_t *i);
+static parse_status_t parse_long_code(node_t *out, size_t *i);
 static parse_status_t parse_o_list(node_t *out, size_t *i);
 static parse_status_t parse_paragraph(node_t *out, size_t *i);
 static parse_status_t parse_table(node_t *out, size_t *i);
@@ -411,6 +414,9 @@ gen_html(void)
 			case NT_FOOTNOTE:
 				gen_footnote_html(&doc_root.children[i]);
 				break;
+			case NT_LONG_CODE:
+				gen_long_code_html(&doc_root.children[i]);
+				break;
 			}
 		}
 	}
@@ -439,6 +445,12 @@ static void
 gen_image_html(node_t const *node)
 {
 	fprintf(conf.out_fp, "<img src=\"%s\">\n", node->data[0]);
+}
+
+static void
+gen_long_code_html(node_t const *node)
+{
+	fprintf(conf.out_fp, "<div class=\"long-code\">%s</div>\n", node->data[0]);
 }
 
 static void
@@ -660,25 +672,23 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 	}
 	
 	// terminate any unterminated HTMLify states.
-	switch (hstate)
 	{
-	case HS_NONE:
-		break;
-	case HS_LINK_REF:
-		str_dyn_append_s(&sub, &slen, &scap, "\"></a>");
-		break;
-	case HS_LINK_TEXT:
-		str_dyn_append_s(&sub, &slen, &scap, "</a>");
-		break;
-	case HS_CODE:
-		str_dyn_append_s(&sub, &slen, &scap, "</code>");
-		break;
-	case HS_ITALIC:
-		str_dyn_append_s(&sub, &slen, &scap, "</i>");
-		break;
-	case HS_BOLD:
-		str_dyn_append_s(&sub, &slen, &scap, "</b>");
-		break;
+		if (hstate & HS_LINK_REF)
+			str_dyn_append_s(&sub, &slen, &scap, "\"></a>");
+		else if (hstate & HS_LINK_TEXT)
+			str_dyn_append_s(&sub, &slen, &scap, "</a>");
+		
+		if (hstate & HS_FOOTNOTE_REF)
+			str_dyn_append_s(&sub, &slen, &scap, "\">[]</a></sup>");
+		else if (hstate & HS_FOOTNOTE_TEXT)
+			str_dyn_append_s(&sub, &slen, &scap, "]</a></sup>");
+		
+		if (hstate & HS_CODE)
+			str_dyn_append_s(&sub, &slen, &scap, "</code>");
+		if (hstate & HS_ITALIC)
+			str_dyn_append_s(&sub, &slen, &scap, "</i>");
+		if (hstate & HS_BOLD)
+			str_dyn_append_s(&sub, &slen, &scap, "</b>");
 	}
 	
 	return sub;
@@ -717,6 +727,7 @@ node_print(FILE *fp, node_t const *node, int depth)
 			"NT_TABLE_ROW",
 			"NT_TABLE_ITEM",
 			"NT_FOOTNOTE",
+			"NT_LONG_CODE",
 		};
 		
 		fprintf(fp, "%s: %d", type_lut[node->type], node->arg);
@@ -775,6 +786,8 @@ parse_any(node_t *out, size_t *i)
 		return parse_o_list(out, i);
 	else if (!strncmp("      ", &file_data.markup[*i], 6))
 		return parse_blockquote(out, i);
+	else if (!strncmp("```\n", &file_data.markup[*i], 4))
+		return parse_long_code(out, i);
 	else if (!strncmp("---", &file_data.markup[*i], 3))
 		return parse_table(out, i);
 	else if (!strncmp("!()", &file_data.markup[*i], 3))
@@ -796,9 +809,7 @@ parse_blockquote(node_t *out, size_t *i)
 	*i += 6;
 	size_t begin = *i;
 	while (file_data.markup[*i] && strncmp("\n\n", &file_data.markup[*i], 2))
-	{
 		++*i;
-	}
 	
 	*out = (node_t)
 	{
@@ -937,6 +948,29 @@ parse_image(node_t *out, size_t *i)
 		.type = NT_IMAGE,
 	};
 	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW);
+	
+	return PS_OK;
+}
+
+static parse_status_t
+parse_long_code(node_t *out, size_t *i)
+{
+	*i += 4;
+	size_t begin = *i;
+	while (file_data.markup[*i]
+	       && strncmp(&file_data.markup[*i], "\n```\n", 4))
+	{
+		++*i;
+	}
+	
+	*out = (node_t)
+	{
+		.type = NT_LONG_CODE,
+	};
+	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+	
+	if (file_data.markup[*i])
+		*i += 4;
 	
 	return PS_OK;
 }
