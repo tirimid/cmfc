@@ -8,8 +8,10 @@
 #include <getopt.h>
 #include <unistd.h>
 
+// text - used for normal textual website data.
+// raw - used for links and URLS.
 #define HS_IS_TEXT(hstate) !HS_IS_RAW(hstate)
-#define HS_IS_RAW(hstate) ((hstate) & (HS_LINK_REF | HS_FORCE_RAW | HS_FOOTNOTE))
+#define HS_IS_RAW(hstate) ((hstate) & (HS_LINK_REF | HS_FORCE_RAW | HS_FOOTNOTE_REF))
 
 typedef enum node_type
 {
@@ -43,7 +45,8 @@ typedef enum htmlify_state
 	HS_ITALIC = 0x8,
 	HS_BOLD = 0x10,
 	HS_FORCE_RAW = 0x20,
-	HS_FOOTNOTE = 0x40,
+	HS_FOOTNOTE_REF = 0x40,
+	HS_FOOTNOTE_TEXT = 0x80,
 } htmlify_state_t;
 
 typedef struct conf
@@ -73,7 +76,10 @@ typedef struct file_data
 
 typedef struct node
 {
-	char *data;
+	// how many strings of data are stored depends on the node in question.
+	// e.g. footnotes have two data strings, while paragraphs have one.
+	char *data[2];
+	
 	struct node *children;
 	size_t nchildren;
 	int arg; // type-dependent argument.
@@ -90,6 +96,7 @@ typedef struct doc_data
 static int conf_read(int argc, char const *argv[]);
 static void conf_quit(void);
 static int doc_data_verify(void);
+static char const *entity_char(char ch);
 static int file_data_read(void);
 static void gen_html(void);
 static void gen_blockquote_html(node_t const *node);
@@ -273,6 +280,27 @@ doc_data_verify(void)
 	return 0;
 }
 
+static char const *
+entity_char(char ch)
+{
+	switch (ch)
+	{
+	case '<':
+		return "&lt;";
+	case '>':
+		return "&gt;";
+	case '&':
+		return "&amp;";
+	case '"':
+		return "&quot;";
+	case '\'':
+		return "&apos;";
+	
+	default:
+		return NULL;
+	}
+}
+
 static int
 file_data_read(void)
 {
@@ -398,19 +426,19 @@ gen_html(void)
 static void
 gen_blockquote_html(node_t const *node)
 {
-	fprintf(conf.out_fp, "<blockquote>%s</blockquote>\n", node->data);
+	fprintf(conf.out_fp, "<blockquote>%s</blockquote>\n", node->data[0]);
 }
 
 static void
 gen_footnote_html(node_t const *node)
 {
-	fprintf(conf.out_fp, "<div class=\"footnote\" id=\"%s\"><b>%s</b>: %s</div>\n", node->data, node->data, node->children[0].data);
+	fprintf(conf.out_fp, "<div class=\"footnote\" id=\"%s\">%s</div>\n", node->data[0], node->data[1]);
 }
 
 static void
 gen_image_html(node_t const *node)
 {
-	fprintf(conf.out_fp, "<img src=\"%s\">\n", node->data);
+	fprintf(conf.out_fp, "<img src=\"%s\">\n", node->data[0]);
 }
 
 static void
@@ -431,7 +459,7 @@ gen_o_list_html(node_t const *node)
 			++dd;
 		}
 		
-		fprintf(conf.out_fp, "<li>%s</li>\n", node->children[i].data);
+		fprintf(conf.out_fp, "<li>%s</li>\n", node->children[i].data[0]);
 		
 		cur_depth = node->children[i].arg;
 	}
@@ -446,7 +474,7 @@ gen_o_list_html(node_t const *node)
 static void
 gen_paragraph_html(node_t const *node)
 {
-	fprintf(conf.out_fp, "<p>%s</p>\n", node->data);
+	fprintf(conf.out_fp, "<p>%s</p>\n", node->data[0]);
 }
 
 static void
@@ -460,7 +488,7 @@ gen_table_html(node_t const *node)
 		{
 			fprintf(conf.out_fp,
 			        "<td>%s</td>\n",
-			        node->children[row].children[col].data);
+			        node->children[row].children[col].data[0]);
 		}
 		fprintf(conf.out_fp, "</tr>\n");
 	}
@@ -470,7 +498,7 @@ gen_table_html(node_t const *node)
 static void
 gen_title_html(node_t const *node)
 {
-	fprintf(conf.out_fp, "<h%d>%s</h%d>\n", node->arg, node->data, node->arg);
+	fprintf(conf.out_fp, "<h%d>%s</h%d>\n", node->arg, node->data[0], node->arg);
 }
 
 static void
@@ -491,7 +519,7 @@ gen_u_list_html(node_t const *node)
 			++dd;
 		}
 		
-		fprintf(conf.out_fp, "<li>%s</li>\n", node->children[i].data);
+		fprintf(conf.out_fp, "<li>%s</li>\n", node->children[i].data[0]);
 		
 		cur_depth = node->children[i].arg;
 	}
@@ -512,41 +540,17 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 	for (size_t i = lb; i < ub; ++i)
 	{
 		// handle special character sequences.
-		if (HS_IS_TEXT(hstate) && s[i] == '<')
+		if (i + 1 < ub && s[i] == '\\')
 		{
-			str_dyn_append_s(&sub, &slen, &scap, "&lt;");
-			continue;
-		}
-		else if (HS_IS_TEXT(hstate) && s[i] == '>')
-		{
-			str_dyn_append_s(&sub, &slen, &scap, "&gt;");
-			continue;
-		}
-		else if (HS_IS_TEXT(hstate) && s[i] == '&')
-		{
-			str_dyn_append_s(&sub, &slen, &scap, "&amp;");
-			continue;
-		}
-		else if (HS_IS_RAW(hstate) && s[i] == '#')
-		{
-			str_dyn_append_s(&sub, &slen, &scap, "%23");
-			continue;
-		}
-		else if (s[i] == '"')
-		{
-			if (HS_IS_RAW(hstate))
+			++i;
+			
+			if (HS_IS_TEXT(hstate) && entity_char(s[i]))
+				str_dyn_append_s(&sub, &slen, &scap, entity_char(s[i]));
+			else if (HS_IS_RAW(hstate) && s[i] == '"')
 				str_dyn_append_s(&sub, &slen, &scap, "%22");
 			else
-				str_dyn_append_s(&sub, &slen, &scap, "&quot;");
-			continue;
-		}
-		else if (i + 1 < ub && s[i] == '\\')
-		{
-			// yes, this can allow the user to break out of the imposed
-			// sanitization measures.
-			// no, it is not worth fixing.
-			++i;
-			str_dyn_append_c(&sub, &slen, &scap, s[i]);
+				str_dyn_append_c(&sub, &slen, &scap, s[i]);
+			
 			continue;
 		}
 		else if (HS_IS_TEXT(hstate)
@@ -564,7 +568,7 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 		{
 			++i;
 			str_dyn_append_s(&sub, &slen, &scap, "<sup><a href=\"#");
-			hstate |= HS_FOOTNOTE;
+			hstate |= HS_FOOTNOTE_REF;
 			continue;
 		}
 		else if (hstate & HS_LINK_REF && s[i] == '|')
@@ -580,26 +584,17 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 			str_dyn_append_s(&sub, &slen, &scap, "</a>");
 			continue;
 		}
-		else if (hstate & HS_FOOTNOTE && s[i] == ']')
+		else if (hstate & HS_FOOTNOTE_REF && s[i] == '|')
 		{
-			// footnote name will need to be duplicated.
-			size_t dup_len = 0;
-			size_t dup_ind = slen;
-			while (sub[dup_ind - 1] != '#')
-			{
-				--dup_ind;
-				++dup_len;
-			}
-			
-			char *dup = calloc(dup_len + 1, sizeof(char));
-			strncpy(dup, &sub[dup_ind], dup_len);
-			
-			hstate &= ~HS_FOOTNOTE;
+			hstate &= ~HS_FOOTNOTE_REF;
+			hstate |= HS_FOOTNOTE_TEXT;
 			str_dyn_append_s(&sub, &slen, &scap, "\">[");
-			str_dyn_append_s(&sub, &slen, &scap, dup);
+			continue;
+		}
+		else if (hstate & HS_FOOTNOTE_TEXT && s[i] == ']')
+		{
+			hstate &= ~HS_FOOTNOTE_TEXT;
 			str_dyn_append_s(&sub, &slen, &scap, "]</a></sup>");
-			
-			free(dup);
 			continue;
 		}
 		else if (HS_IS_TEXT(hstate) && s[i] == '`')
@@ -645,6 +640,16 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 				hstate |= HS_ITALIC;
 				str_dyn_append_s(&sub, &slen, &scap, "<i>");
 			}
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate) && entity_char(s[i]))
+		{
+			str_dyn_append_s(&sub, &slen, &scap, entity_char(s[i]));
+			continue;
+		}
+		else if (HS_IS_RAW(hstate) && s[i] == '"')
+		{
+			str_dyn_append_s(&sub, &slen, &scap, "%22");
 			continue;
 		}
 		
@@ -714,11 +719,13 @@ node_print(FILE *fp, node_t const *node, int depth)
 			"NT_FOOTNOTE",
 		};
 		
-		fprintf(fp,
-		        "%s: %d %s\n",
-		        type_lut[node->type],
-		        node->arg,
-		        node->data ? node->data : "-");
+		fprintf(fp, "%s: %d", type_lut[node->type], node->arg);
+		for (size_t i = 0; i < sizeof(node->data) / sizeof(char *); ++i)
+		{
+			if (node->data[i])
+				fprintf(fp, " %s", node->data[i]);
+		}
+		fprintf(fp, "\n");
 	}
 	
 	// recursively print out children.
@@ -733,9 +740,6 @@ parse(void)
 {
 	doc_root = (node_t)
 	{
-		.data = NULL,
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_ROOT,
 	};
 	
@@ -798,12 +802,9 @@ parse_blockquote(node_t *out, size_t *i)
 	
 	*out = (node_t)
 	{
-		.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_BLOCKQUOTE,
-		.arg = 0,
 	};
+	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	
 	return PS_OK;
 }
@@ -883,30 +884,42 @@ parse_doc(node_t *out, size_t *i)
 static parse_status_t
 parse_footnote(node_t *out, size_t *i)
 {
-	*i += 2;
-	size_t begin = *i;
-	while (file_data.markup[*i] && file_data.markup[*i] != ']')
+	char *name;
 	{
-		if (*i + 1 < file_data.markup_len && file_data.markup[*i] == '\\')
+		*i += 2;
+		size_t begin = *i;
+		while (file_data.markup[*i] && file_data.markup[*i] != ']')
+		{
+			if (*i + 1 < file_data.markup_len
+			    && file_data.markup[*i] == '\\')
+			{
+				++*i;
+			}
 			++*i;
+		}
+		
+		name = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW);
+	}
+	
+	char *text;
+	{
 		++*i;
+		size_t begin = *i;
+		while (file_data.markup[*i]
+		       && strncmp("\n\n", &file_data.markup[*i], 2))
+		{
+			++*i;
+		}
+		
+		text = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	}
 	
 	*out = (node_t)
 	{
-		.data = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW),
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_FOOTNOTE,
-		.arg = 0,
 	};
-	
-	++*i;
-	node_t text;
-	if (parse_paragraph(&text, i))
-		return PS_ERR;
-	
-	node_add_child(out, &text);
+	out->data[0] = name;
+	out->data[1] = text;
 	
 	return PS_OK;
 }
@@ -921,12 +934,9 @@ parse_image(node_t *out, size_t *i)
 	
 	*out = (node_t)
 	{
-		.data = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW),
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_IMAGE,
-		.arg = 0,
 	};
+	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW);
 	
 	return PS_OK;
 }
@@ -936,11 +946,7 @@ parse_o_list(node_t *out, size_t *i)
 {
 	*out = (node_t)
 	{
-		.data = NULL,
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_O_LIST,
-		.arg = 0,
 	};
 	
 	for (;;)
@@ -962,12 +968,11 @@ parse_o_list(node_t *out, size_t *i)
 		
 		node_t item =
 		{
-			.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
-			.children = NULL,
-			.nchildren = 0,
 			.type = NT_LIST_ITEM,
 			.arg = depth,
 		};
+		item.data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		
 		node_add_child(out, &item);
 		
 		++*i;
@@ -992,12 +997,9 @@ parse_paragraph(node_t *out, size_t *i)
 	
 	*out = (node_t)
 	{
-		.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_PARAGRAPH,
-		.arg = 0,
 	};
+	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	
 	return PS_OK;
 }
@@ -1019,11 +1021,7 @@ parse_table(node_t *out, size_t *i)
 	
 	*out = (node_t)
 	{
-		.data = NULL,
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_TABLE,
-		.arg = 0,
 	};
 	
 	for (++*i; file_data.markup[*i] && file_data.markup[*i] != '\n';)
@@ -1050,11 +1048,7 @@ parse_table_row(node_t *out, size_t *i)
 {
 	*out = (node_t)
 	{
-		.data = NULL,
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_TABLE_ROW,
-		.arg = 0,
 	};
 	
 	++*i;
@@ -1082,20 +1076,18 @@ parse_table_row(node_t *out, size_t *i)
 		{
 			node_t item =
 			{
-				.data = sub,
-				.children = NULL,
-				.nchildren = 0,
 				.type = NT_TABLE_ITEM,
-				.arg = 0,
 			};
+			item.data[0] = sub;
+			
 			node_add_child(out, &item);
 		}
 		else
 		{
-			size_t slen = strlen(out->children[col].data);
+			size_t slen = strlen(out->children[col].data[0]);
 			size_t scap = slen + 1;
-			str_dyn_append_c(&out->children[col].data, &slen, &scap, ' ');
-			str_dyn_append_s(&out->children[col].data, &slen, &scap, sub);
+			str_dyn_append_c(&out->children[col].data[0], &slen, &scap, ' ');
+			str_dyn_append_s(&out->children[col].data[0], &slen, &scap, sub);
 			free(sub);
 		}
 		
@@ -1168,12 +1160,10 @@ parse_title(node_t *out, size_t *i)
 	
 	*out = (node_t)
 	{
-		.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_TITLE,
 		.arg = hsize,
 	};
+	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	
 	return PS_OK;
 }
@@ -1183,11 +1173,7 @@ parse_u_list(node_t *out, size_t *i)
 {
 	*out = (node_t)
 	{
-		.data = NULL,
-		.children = NULL,
-		.nchildren = 0,
 		.type = NT_U_LIST,
-		.arg = 0,
 	};
 	
 	for (;;)
@@ -1209,12 +1195,11 @@ parse_u_list(node_t *out, size_t *i)
 		
 		node_t item =
 		{
-			.data = htmlified_substr(file_data.markup, begin, *i, HS_NONE),
-			.children = NULL,
-			.nchildren = 0,
 			.type = NT_LIST_ITEM,
 			.arg = depth,
 		};
+		item.data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		
 		node_add_child(out, &item);
 		
 		++*i;
