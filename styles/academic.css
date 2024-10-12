@@ -54,9 +54,12 @@ td {
 
 table {
 	margin: 1ch;
+	display: block;
+	overflow-x: scroll;
+	border-collapse: collapse;
 }
 
-table, tr, td {
+tr, td {
 	border: solid 1px #000000;
 	border-collapse: collapse;
 }
