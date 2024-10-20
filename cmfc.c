@@ -13,7 +13,7 @@
 #define HS_IS_TEXT(hstate) !HS_IS_RAW(hstate)
 #define HS_IS_RAW(hstate) ((hstate) & (HS_LINK_REF | HS_FORCE_RAW | HS_FOOTNOTE_REF))
 
-typedef enum node_type
+enum node_type
 {
 	NT_ROOT = 0,
 	NT_TITLE,
@@ -28,16 +28,16 @@ typedef enum node_type
 	NT_TABLE_ITEM,
 	NT_FOOTNOTE,
 	NT_LONG_CODE,
-} node_type_t;
+};
 
-typedef enum parse_status
+enum parse_status
 {
 	PS_OK = 0,
 	PS_ERR,
 	PS_SKIP,
-} parse_status_t;
+};
 
-typedef enum htmlify_state
+enum htmlify_state
 {
 	HS_NONE = 0x0,
 	HS_LINK_REF = 0x1,
@@ -48,9 +48,9 @@ typedef enum htmlify_state
 	HS_FORCE_RAW = 0x20,
 	HS_FOOTNOTE_REF = 0x40,
 	HS_FOOTNOTE_TEXT = 0x80,
-} htmlify_state_t;
+};
 
-typedef struct conf
+struct conf
 {
 	// main configuration data.
 	FILE *markup_fp;
@@ -64,18 +64,18 @@ typedef struct conf
 	
 	// configuration flags.
 	bool dump_ast;
-} conf_t;
+};
 
-typedef struct file_data
+struct file_data
 {
 	char *markup;
 	size_t markup_len;
 	
 	char *style;
 	size_t style_len;
-} file_data_t;
+};
 
-typedef struct node
+struct node
 {
 	// how many strings of data are stored depends on the node in question.
 	// e.g. footnotes have two data strings, while paragraphs have one.
@@ -85,14 +85,14 @@ typedef struct node
 	size_t nchildren;
 	int arg; // type-dependent argument.
 	unsigned char type;
-} node_t;
+};
 
-typedef struct doc_data
+struct doc_data
 {
 	char *title;
 	char *author;
 	char *created, *revised;
-} doc_data_t;
+};
 
 static int conf_read(int argc, char const *argv[]);
 static void conf_quit(void);
@@ -100,41 +100,41 @@ static int doc_data_verify(void);
 static char const *entity_char(char ch);
 static int file_data_read(void);
 static void gen_html(void);
-static void gen_blockquote_html(node_t const *node);
-static void gen_footnote_html(node_t const *node);
-static void gen_image_html(node_t const *node);
-static void gen_long_code_html(node_t const *node);
-static void gen_o_list_html(node_t const *node);
-static void gen_paragraph_html(node_t const *node);
-static void gen_table_html(node_t const *node);
-static void gen_title_html(node_t const *node);
-static void gen_u_list_html(node_t const *node);
-static char *htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate);
-static void node_add_child(node_t *node, node_t *child);
-static void node_print(FILE *fp, node_t const *node, int depth);
+static void gen_blockquote_html(struct node const *node);
+static void gen_footnote_html(struct node const *node);
+static void gen_image_html(struct node const *node);
+static void gen_long_code_html(struct node const *node);
+static void gen_o_list_html(struct node const *node);
+static void gen_paragraph_html(struct node const *node);
+static void gen_table_html(struct node const *node);
+static void gen_title_html(struct node const *node);
+static void gen_u_list_html(struct node const *node);
+static char *htmlified_substr(char const *s, size_t lb, size_t ub, enum htmlify_state hstate);
+static void node_add_child(struct node *node, struct node *child);
+static void node_print(FILE *fp, struct node const *node, int depth);
 static int parse(void);
-static parse_status_t parse_any(node_t *out, size_t *i);
-static parse_status_t parse_blockquote(node_t *out, size_t *i);
-static parse_status_t parse_doc(node_t *out, size_t *i);
-static parse_status_t parse_footnote(node_t *out, size_t *i);
-static parse_status_t parse_image(node_t *out, size_t *i);
-static parse_status_t parse_long_code(node_t *out, size_t *i);
-static parse_status_t parse_o_list(node_t *out, size_t *i);
-static parse_status_t parse_paragraph(node_t *out, size_t *i);
-static parse_status_t parse_table(node_t *out, size_t *i);
-static parse_status_t parse_table_row(node_t *out, size_t *i);
-static parse_status_t parse_title(node_t *out, size_t *i);
-static parse_status_t parse_u_list(node_t *out, size_t *i);
+static enum parse_status parse_any(struct node *out, size_t *i);
+static enum parse_status parse_blockquote(struct node *out, size_t *i);
+static enum parse_status parse_doc(struct node *out, size_t *i);
+static enum parse_status parse_footnote(struct node *out, size_t *i);
+static enum parse_status parse_image(struct node *out, size_t *i);
+static enum parse_status parse_long_code(struct node *out, size_t *i);
+static enum parse_status parse_o_list(struct node *out, size_t *i);
+static enum parse_status parse_paragraph(struct node *out, size_t *i);
+static enum parse_status parse_table(struct node *out, size_t *i);
+static enum parse_status parse_table_row(struct node *out, size_t *i);
+static enum parse_status parse_title(struct node *out, size_t *i);
+static enum parse_status parse_u_list(struct node *out, size_t *i);
 static void prog_err(size_t start, char const *msg);
 static char const *single_line(char const *s, size_t start);
 static void str_dyn_append_s(char **str, size_t *len, size_t *cap, char const *s);
 static void str_dyn_append_c(char **str, size_t *len, size_t *cap, char c);
 static void usage(char const *name);
 
-static conf_t conf;
-static doc_data_t doc_data;
-static node_t doc_root;
-static file_data_t file_data;
+static struct conf conf;
+static struct doc_data doc_data;
+static struct node doc_root;
+static struct file_data file_data;
 
 int
 main(int argc, char const *argv[])
@@ -430,31 +430,31 @@ gen_html(void)
 }
 
 static void
-gen_blockquote_html(node_t const *node)
+gen_blockquote_html(struct node const *node)
 {
 	fprintf(conf.out_fp, "<blockquote>%s</blockquote>\n", node->data[0]);
 }
 
 static void
-gen_footnote_html(node_t const *node)
+gen_footnote_html(struct node const *node)
 {
 	fprintf(conf.out_fp, "<div class=\"footnote\" id=\"%s\">%s</div>\n", node->data[0], node->data[1]);
 }
 
 static void
-gen_image_html(node_t const *node)
+gen_image_html(struct node const *node)
 {
 	fprintf(conf.out_fp, "<img src=\"%s\">\n", node->data[0]);
 }
 
 static void
-gen_long_code_html(node_t const *node)
+gen_long_code_html(struct node const *node)
 {
 	fprintf(conf.out_fp, "<div class=\"long-code\">%s</div>\n", node->data[0]);
 }
 
 static void
-gen_o_list_html(node_t const *node)
+gen_o_list_html(struct node const *node)
 {
 	int cur_depth = 0;
 	for (size_t i = 0; i < node->nchildren; ++i)
@@ -484,13 +484,13 @@ gen_o_list_html(node_t const *node)
 }
 
 static void
-gen_paragraph_html(node_t const *node)
+gen_paragraph_html(struct node const *node)
 {
 	fprintf(conf.out_fp, "<p>%s</p>\n", node->data[0]);
 }
 
 static void
-gen_table_html(node_t const *node)
+gen_table_html(struct node const *node)
 {
 	fprintf(conf.out_fp, "<table>\n");
 	for (size_t row = 0; row < node->nchildren; ++row)
@@ -508,13 +508,13 @@ gen_table_html(node_t const *node)
 }
 
 static void
-gen_title_html(node_t const *node)
+gen_title_html(struct node const *node)
 {
 	fprintf(conf.out_fp, "<h%d>%s</h%d>\n", node->arg, node->data[0], node->arg);
 }
 
 static void
-gen_u_list_html(node_t const *node)
+gen_u_list_html(struct node const *node)
 {
 	int cur_depth = 0;
 	for (size_t i = 0; i < node->nchildren; ++i)
@@ -544,7 +544,7 @@ gen_u_list_html(node_t const *node)
 }
 
 static char *
-htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
+htmlified_substr(char const *s, size_t lb, size_t ub, enum htmlify_state hstate)
 {
 	char *sub = calloc(1, sizeof(char));
 	size_t slen = 0, scap = 1;
@@ -695,15 +695,15 @@ htmlified_substr(char const *s, size_t lb, size_t ub, htmlify_state_t hstate)
 }
 
 static void
-node_add_child(node_t *node, node_t *child)
+node_add_child(struct node *node, struct node *child)
 {
 	++node->nchildren;
-	node->children = reallocarray(node->children, node->nchildren, sizeof(node_t));
+	node->children = reallocarray(node->children, node->nchildren, sizeof(struct node));
 	node->children[node->nchildren - 1] = *child;
 }
 
 static void
-node_print(FILE *fp, node_t const *node, int depth)
+node_print(FILE *fp, struct node const *node, int depth)
 {
 	// pad out appropriate depth.
 	{
@@ -749,15 +749,15 @@ node_print(FILE *fp, node_t const *node, int depth)
 static int
 parse(void)
 {
-	doc_root = (node_t)
+	doc_root = (struct node)
 	{
 		.type = NT_ROOT,
 	};
 	
 	for (size_t i = 0; i < file_data.markup_len;)
 	{
-		node_t child;
-		parse_status_t rc = parse_any(&child, &i);
+		struct node child;
+		enum parse_status rc = parse_any(&child, &i);
 		switch (rc)
 		{
 		case PS_OK:
@@ -773,8 +773,8 @@ parse(void)
 	return 0;
 }
 
-static parse_status_t
-parse_any(node_t *out, size_t *i)
+static enum parse_status
+parse_any(struct node *out, size_t *i)
 {
 	if (!strncmp("DOC", &file_data.markup[*i], 3))
 		return parse_doc(out, i);
@@ -803,15 +803,15 @@ parse_any(node_t *out, size_t *i)
 	}
 }
 
-static parse_status_t
-parse_blockquote(node_t *out, size_t *i)
+static enum parse_status
+parse_blockquote(struct node *out, size_t *i)
 {
 	*i += 6;
 	size_t begin = *i;
 	while (file_data.markup[*i] && strncmp("\n\n", &file_data.markup[*i], 2))
 		++*i;
 	
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_BLOCKQUOTE,
 	};
@@ -820,8 +820,8 @@ parse_blockquote(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_doc(node_t *out, size_t *i)
+static enum parse_status
+parse_doc(struct node *out, size_t *i)
 {
 	if (!strncmp("DOC-TITLE ", &file_data.markup[*i], 10))
 	{
@@ -892,8 +892,8 @@ parse_doc(node_t *out, size_t *i)
 	return PS_SKIP;
 }
 
-static parse_status_t
-parse_footnote(node_t *out, size_t *i)
+static enum parse_status
+parse_footnote(struct node *out, size_t *i)
 {
 	char *name;
 	{
@@ -925,7 +925,7 @@ parse_footnote(node_t *out, size_t *i)
 		text = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 	}
 	
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_FOOTNOTE,
 	};
@@ -935,15 +935,15 @@ parse_footnote(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_image(node_t *out, size_t *i)
+static enum parse_status
+parse_image(struct node *out, size_t *i)
 {
 	*i += 3;
 	size_t begin = *i;
 	while (file_data.markup[*i] && file_data.markup[*i] != '\n')
 		++*i;
 	
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_IMAGE,
 	};
@@ -952,8 +952,8 @@ parse_image(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_long_code(node_t *out, size_t *i)
+static enum parse_status
+parse_long_code(struct node *out, size_t *i)
 {
 	*i += 4;
 	size_t begin = *i;
@@ -963,7 +963,7 @@ parse_long_code(node_t *out, size_t *i)
 		++*i;
 	}
 	
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_LONG_CODE,
 	};
@@ -975,10 +975,10 @@ parse_long_code(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_o_list(node_t *out, size_t *i)
+static enum parse_status
+parse_o_list(struct node *out, size_t *i)
 {
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_O_LIST,
 	};
@@ -1000,7 +1000,7 @@ parse_o_list(node_t *out, size_t *i)
 			++*i;
 		}
 		
-		node_t item =
+		struct node item =
 		{
 			.type = NT_LIST_ITEM,
 			.arg = depth,
@@ -1017,8 +1017,8 @@ parse_o_list(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_paragraph(node_t *out, size_t *i)
+static enum parse_status
+parse_paragraph(struct node *out, size_t *i)
 {
 	*i += 4 * !strncmp("    ", &file_data.markup[*i], 4);
 	size_t begin = *i;
@@ -1029,7 +1029,7 @@ parse_paragraph(node_t *out, size_t *i)
 		++*i;
 	}
 	
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_PARAGRAPH,
 	};
@@ -1038,12 +1038,11 @@ parse_paragraph(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_table(node_t *out, size_t *i)
+static enum parse_status
+parse_table(struct node *out, size_t *i)
 {
 	// validate beginning of table.
 	{
-		size_t table_begin = *i;
 		while (file_data.markup[*i] && file_data.markup[*i] == '-')
 			++*i;
 		if (file_data.markup[*i] != '\n')
@@ -1053,7 +1052,7 @@ parse_table(node_t *out, size_t *i)
 		}
 	}
 	
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_TABLE,
 	};
@@ -1062,7 +1061,7 @@ parse_table(node_t *out, size_t *i)
 	{
 		if (file_data.markup[*i] == '|')
 		{
-			node_t row;
+			struct node row;
 			if (parse_table_row(&row, i))
 				return PS_ERR;
 			node_add_child(out, &row);
@@ -1077,10 +1076,10 @@ parse_table(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_table_row(node_t *out, size_t *i)
+static enum parse_status
+parse_table_row(struct node *out, size_t *i)
 {
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_TABLE_ROW,
 	};
@@ -1108,7 +1107,7 @@ parse_table_row(node_t *out, size_t *i)
 		char *sub = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
 		if (col >= out->nchildren)
 		{
-			node_t item =
+			struct node item =
 			{
 				.type = NT_TABLE_ITEM,
 			};
@@ -1168,8 +1167,8 @@ parse_table_row(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_title(node_t *out, size_t *i)
+static enum parse_status
+parse_title(struct node *out, size_t *i)
 {
 	// get and validate header size.
 	int hsize = 0;
@@ -1192,7 +1191,7 @@ parse_title(node_t *out, size_t *i)
 	while (file_data.markup[*i] && strncmp("\n\n", &file_data.markup[*i], 2))
 		++*i;
 	
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_TITLE,
 		.arg = hsize,
@@ -1202,10 +1201,10 @@ parse_title(node_t *out, size_t *i)
 	return PS_OK;
 }
 
-static parse_status_t
-parse_u_list(node_t *out, size_t *i)
+static enum parse_status
+parse_u_list(struct node *out, size_t *i)
 {
-	*out = (node_t)
+	*out = (struct node)
 	{
 		.type = NT_U_LIST,
 	};
@@ -1227,7 +1226,7 @@ parse_u_list(node_t *out, size_t *i)
 			++*i;
 		}
 		
-		node_t item =
+		struct node item =
 		{
 			.type = NT_LIST_ITEM,
 			.arg = depth,

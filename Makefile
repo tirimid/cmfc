@@ -1,7 +1,7 @@
 .PHONY: all install uninstall
 
 CC := gcc
-CFLAGS := -std=c99 -pedantic -O3 -D_DEFAULT_SOURCE
+CFLAGS := -std=c99 -pedantic -O3 -D_DEFAULT_SOURCE -Wall
 INSTALL_DIR := /usr/bin
 
 all: cmfc
