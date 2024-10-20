@@ -1,0 +1,103 @@
+html {
+	background-color: #000000;
+	padding-top: 5ch;
+	padding-bottom: 5ch;
+}
+
+body {
+	margin-left: auto;
+	margin-right: auto;
+	width: 80ch;
+	color: #ffffff;
+	font-family: monospace;
+	font-weight: normal;
+}
+
+h1 {
+	padding-top: 1ch;
+	font-size: 4.5ch;
+	font-weight: bold;
+}
+
+h2 {
+	font-size: 3ch;
+	font-weight: bold;
+}
+
+h3 {
+	font-size: 2.5ch;
+	font-weight: bold;
+}
+
+h4, h5, h6 {
+	font-size: 2ch;
+	font-weight: bold;
+}
+
+li {
+	margin: 0 auto;
+}
+
+td {
+	margin: 0 auto;
+	padding: 1ch;
+}
+
+table {
+	margin: 1ch;
+	display: block;
+	overflow-x: scroll;
+	border-collapse: collapse;
+}
+
+tr, td {
+	border: solid 1px #ffffff;
+	border-collapse: collapse;
+}
+
+p {
+	text-indent: 4ch;
+	margin: 0 auto;
+}
+
+.footnote {
+	padding: 1ch;
+}
+
+img {
+	max-height: 100%;
+	max-width: 100%;
+}
+
+a {
+	color: #00ffff;
+}
+
+a:hover {
+	background-color: #00ffff;
+	color: #000000;
+}
+
+.long-code {
+	margin: 1ch;
+	padding: 2ch;
+	border: 1px solid #ffffff;
+	white-space: pre-wrap;
+	tab-size: 6;
+}
+
+blockquote {
+	text-indent: 0ch;
+	margin: 0 auto;
+	padding-left: 6ch;
+	padding-top: 1ch;
+	padding-bottom: 1ch;
+}
+
+.doc-title {
+	font-size: 7ch;
+}
+
+.doc-author, .doc-date {
+	font-size: 2ch;
+}
