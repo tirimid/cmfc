@@ -44,7 +44,10 @@ td {
 }
 
 table {
-	margin: 1ch;
+	margin-left: 1ch;
+	margin-right: 1ch;
+	margin-top: 3ch;
+	margin-bottom: 3ch;
 	display: block;
 	overflow-x: scroll;
 	border-collapse: collapse;
@@ -79,7 +82,11 @@ a:hover {
 }
 
 .long-code {
-	margin: 1ch;
+	width: 87ch;
+	margin-right: 1ch;
+	margin-top: 3ch;
+	margin-bottom: 3ch;
+	margin-left: -5ch;
 	padding: 2ch;
 	border: 1px solid #ffffff;
 	white-space: pre-wrap;
