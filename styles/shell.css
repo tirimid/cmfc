@@ -82,11 +82,11 @@ a:hover {
 }
 
 .long-code {
-	width: 87ch;
+	width: 85ch;
 	margin-right: 1ch;
 	margin-top: 3ch;
 	margin-bottom: 3ch;
-	margin-left: -5ch;
+	margin-left: -4ch;
 	padding: 2ch;
 	border: 1px solid #ffffff;
 	white-space: pre-wrap;
@@ -106,5 +106,12 @@ blockquote {
 }
 
 .doc-author, .doc-date {
-	font-size: 2ch;
+	color: #999999;
+	font-size: 2.5ch;
+}
+
+.doc-license {
+	color: #999999;
+	font-size: 2.5ch;
+	padding-top: 3ch;
 }

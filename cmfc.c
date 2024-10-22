@@ -62,6 +62,9 @@ struct conf
 	FILE *style_fp;
 	char const *style_file;
 	
+	FILE *docdata_fp;
+	char const *docdata_file;
+	
 	// configuration flags.
 	bool dump_ast;
 };
@@ -73,6 +76,9 @@ struct file_data
 	
 	char *style;
 	size_t style_len;
+	
+	char *docdata;
+	size_t docdata_len;
 };
 
 struct node
@@ -92,6 +98,7 @@ struct doc_data
 	char *title;
 	char *author;
 	char *created, *revised;
+	char *license;
 };
 
 static int conf_read(int argc, char const *argv[]);
@@ -112,20 +119,20 @@ static void gen_u_list_html(struct node const *node);
 static char *htmlified_substr(char const *s, size_t lb, size_t ub, enum htmlify_state hstate);
 static void node_add_child(struct node *node, struct node *child);
 static void node_print(FILE *fp, struct node const *node, int depth);
-static int parse(void);
-static enum parse_status parse_any(struct node *out, size_t *i);
-static enum parse_status parse_blockquote(struct node *out, size_t *i);
-static enum parse_status parse_doc(struct node *out, size_t *i);
-static enum parse_status parse_footnote(struct node *out, size_t *i);
-static enum parse_status parse_image(struct node *out, size_t *i);
-static enum parse_status parse_long_code(struct node *out, size_t *i);
-static enum parse_status parse_o_list(struct node *out, size_t *i);
-static enum parse_status parse_paragraph(struct node *out, size_t *i);
-static enum parse_status parse_table(struct node *out, size_t *i);
-static enum parse_status parse_table_row(struct node *out, size_t *i);
-static enum parse_status parse_title(struct node *out, size_t *i);
-static enum parse_status parse_u_list(struct node *out, size_t *i);
-static void prog_err(size_t start, char const *msg);
+static int parse(struct node *out, char const *data, size_t len, char const *file);
+static enum parse_status parse_any(struct node *out, size_t *i, char const *data, size_t len, char const *file);
+static enum parse_status parse_blockquote(struct node *out, size_t *i, char const *data);
+static enum parse_status parse_doc(size_t *i, char const *data, char const *file);
+static enum parse_status parse_footnote(struct node *out, size_t *i, char const *data, size_t len);
+static enum parse_status parse_image(struct node *out, size_t *i, char const *data);
+static enum parse_status parse_long_code(struct node *out, size_t *i, char const *data);
+static enum parse_status parse_o_list(struct node *out, size_t *i, char const *data, size_t len);
+static enum parse_status parse_paragraph(struct node *out, size_t *i, char const *data);
+static enum parse_status parse_table(struct node *out, size_t *i, char const *data, size_t len, char const *file);
+static enum parse_status parse_table_row(struct node *out, size_t *i, char const *data, size_t len, char const *file);
+static enum parse_status parse_title(struct node *out, size_t *i, char const *data, char const *file);
+static enum parse_status parse_u_list(struct node *out, size_t *i, char const *data, size_t len);
+static void prog_err(char const *file, char const *data, size_t start, char const *msg);
 static char const *single_line(char const *s, size_t start);
 static void str_dyn_append_s(char **str, size_t *len, size_t *cap, char const *s);
 static void str_dyn_append_c(char **str, size_t *len, size_t *cap, char c);
@@ -135,6 +142,7 @@ static struct conf conf;
 static struct doc_data doc_data;
 static struct node doc_root;
 static struct file_data file_data;
+static bool raw_text = false;
 
 int
 main(int argc, char const *argv[])
@@ -145,7 +153,13 @@ main(int argc, char const *argv[])
 	if (file_data_read())
 		return 1;
 	
-	if (parse())
+	if (conf.docdata_file)
+	{
+		if (parse(NULL, file_data.docdata, file_data.docdata_len, conf.docdata_file))
+			return 1;
+	}
+	
+	if (parse(&doc_root, file_data.markup, file_data.markup_len, conf.markup_file))
 		return 1;
 	
 	if (doc_data_verify())
@@ -169,12 +183,28 @@ conf_read(int argc, char const *argv[])
 	
 	// get option arguments.
 	int c;
-	while ((c = getopt(argc, (char *const *)argv, "Aho:s:")) != -1)
+	while ((c = getopt(argc, (char *const *)argv, "Ad:ho:s:")) != -1)
 	{
 		switch (c)
 		{
 		case 'A':
 			conf.dump_ast = true;
+			break;
+		case 'd':
+			if (conf.docdata_fp)
+			{
+				fprintf(stderr, "err: cannot specify multiple docdata files!\n");
+				return 1;
+			}
+			
+			conf.docdata_file = optarg;
+			conf.docdata_fp = fopen(optarg, "rb");
+			if (!conf.docdata_fp)
+			{
+				fprintf(stderr, "err: failed to open docdata file for reading: %s!\n", optarg);
+				return 1;
+			}
+			
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -348,13 +378,34 @@ file_data_read(void)
 		}
 	}
 	
+	// read docdata file.
+	if (conf.docdata_fp)
+	{
+		fseek(conf.docdata_fp, 0, SEEK_END);
+		long len = ftell(conf.docdata_fp);
+		if (len == -1)
+		{
+			fprintf(stderr, "err: failed to get size of docdata file: %s!\n", conf.docdata_file);
+			return 1;
+		}
+		fseek(conf.docdata_fp, 0, SEEK_SET);
+		
+		file_data.docdata_len = len;
+		file_data.docdata = calloc(len + 1, sizeof(char));
+		if (fread(file_data.docdata, sizeof(char), len, conf.docdata_fp) != len)
+		{
+			fprintf(stderr, "err: failed to read docdata file: %s!\n", conf.docdata_file);
+			return 1;
+		}
+	}
+	
 	return 0;
 }
 
 static void
 gen_html(void)
 {
-	// write out preamble, head, document data.
+	// write out preamble, head, header document data.
 	{
 		fprintf(conf.out_fp,
 		        "<!DOCTYPE html>\n"
@@ -384,7 +435,7 @@ gen_html(void)
 		}
 	}
 	
-	// write out document contents and footnotes.
+	// write out document contents.
 	{
 		for (size_t i = 0; i < doc_root.nchildren; ++i)
 		{
@@ -421,8 +472,11 @@ gen_html(void)
 		}
 	}
 	
-	// write out postamble.
+	// write out postamble, footer document data.
 	{
+		if (doc_data.license)
+			fprintf(conf.out_fp, "<div class=\"doc-license\">%s</div>", doc_data.license);
+		
 		fprintf(conf.out_fp,
 		        "</body>\n"
 		        "</html>\n");
@@ -551,8 +605,12 @@ htmlified_substr(char const *s, size_t lb, size_t ub, enum htmlify_state hstate)
 	
 	for (size_t i = lb; i < ub; ++i)
 	{
-		// handle special character sequences.
-		if (i + 1 < ub && s[i] == '\\')
+		if (raw_text)
+		{
+			str_dyn_append_c(&sub, &slen, &scap, s[i]);
+			continue;
+		}
+		else if (i + 1 < ub && s[i] == '\\')
 		{
 			++i;
 			
@@ -747,21 +805,25 @@ node_print(FILE *fp, struct node const *node, int depth)
 }
 
 static int
-parse(void)
+parse(struct node *out, char const *data, size_t len, char const *file)
 {
-	doc_root = (struct node)
+	if (out)
 	{
-		.type = NT_ROOT,
-	};
+		*out = (struct node)
+		{
+			.type = NT_ROOT,
+		};
+	}
 	
-	for (size_t i = 0; i < file_data.markup_len;)
+	for (size_t i = 0; i < len;)
 	{
 		struct node child;
-		enum parse_status rc = parse_any(&child, &i);
+		enum parse_status rc = parse_any(out ? &child : NULL, &i, data, len, file);
 		switch (rc)
 		{
 		case PS_OK:
-			node_add_child(&doc_root, &child);
+			if (out)
+				node_add_child(out, &child);
 			break;
 		case PS_ERR:
 			return 1;
@@ -774,28 +836,32 @@ parse(void)
 }
 
 static enum parse_status
-parse_any(struct node *out, size_t *i)
+parse_any(struct node *out,
+          size_t *i,
+          char const *data,
+          size_t len,
+          char const *file)
 {
-	if (!strncmp("DOC", &file_data.markup[*i], 3))
-		return parse_doc(out, i);
-	else if (file_data.markup[*i] == '=')
-		return parse_title(out, i);
-	else if (file_data.markup[*i] == '*')
-		return parse_u_list(out, i);
-	else if (file_data.markup[*i] == '#')
-		return parse_o_list(out, i);
-	else if (!strncmp("      ", &file_data.markup[*i], 6))
-		return parse_blockquote(out, i);
-	else if (!strncmp("```\n", &file_data.markup[*i], 4))
-		return parse_long_code(out, i);
-	else if (!strncmp("---", &file_data.markup[*i], 3))
-		return parse_table(out, i);
-	else if (!strncmp("!()", &file_data.markup[*i], 3))
-		return parse_image(out, i);
-	else if (!strncmp("[^", &file_data.markup[*i], 2))
-		return parse_footnote(out, i);
-	else if (file_data.markup[*i] != '\n')
-		return parse_paragraph(out, i);
+	if (!strncmp("DOC", &data[*i], 3))
+		return parse_doc(i, data, file);
+	else if (data[*i] == '=')
+		return parse_title(out, i, data, file);
+	else if (data[*i] == '*')
+		return parse_u_list(out, i, data, len);
+	else if (data[*i] == '#')
+		return parse_o_list(out, i, data, len);
+	else if (!strncmp("      ", &data[*i], 6))
+		return parse_blockquote(out, i, data);
+	else if (!strncmp("```\n", &data[*i], 4))
+		return parse_long_code(out, i, data);
+	else if (!strncmp("---", &data[*i], 3))
+		return parse_table(out, i, data, len, file);
+	else if (!strncmp("!()", &data[*i], 3))
+		return parse_image(out, i, data);
+	else if (!strncmp("[^", &data[*i], 2))
+		return parse_footnote(out, i, data, len);
+	else if (data[*i] != '\n')
+		return parse_paragraph(out, i, data);
 	else
 	{
 		++*i;
@@ -804,88 +870,105 @@ parse_any(struct node *out, size_t *i)
 }
 
 static enum parse_status
-parse_blockquote(struct node *out, size_t *i)
+parse_blockquote(struct node *out, size_t *i, char const *data)
 {
 	*i += 6;
 	size_t begin = *i;
-	while (file_data.markup[*i] && strncmp("\n\n", &file_data.markup[*i], 2))
+	while (data[*i] && strncmp("\n\n", &data[*i], 2))
 		++*i;
 	
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_BLOCKQUOTE,
-	};
-	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		*out = (struct node)
+		{
+			.type = NT_BLOCKQUOTE,
+		};
+		out->data[0] = htmlified_substr(data, begin, *i, HS_NONE);
+	}
 	
 	return PS_OK;
 }
 
 static enum parse_status
-parse_doc(struct node *out, size_t *i)
+parse_doc(size_t *i, char const *data, char const *file)
 {
-	if (!strncmp("DOC-TITLE ", &file_data.markup[*i], 10))
+	if (!strncmp("DOC-TITLE ", &data[*i], 10))
 	{
 		if (doc_data.title)
-		{
-			prog_err(*i, "cannot redefine document title!");
-			return PS_ERR;
-		}
+			free(doc_data.title);
 		
 		*i += 10;
 		size_t begin = *i;
-		while (file_data.markup[*i] && file_data.markup[*i] != '\n')
+		while (data[*i] && data[*i] != '\n')
 			++*i;
 		
-		doc_data.title = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		doc_data.title = htmlified_substr(data, begin, *i, HS_NONE);
 	}
-	else if (!strncmp("DOC-AUTHOR ", &file_data.markup[*i], 11))
+	else if (!strncmp("DOC-AUTHOR ", &data[*i], 11))
 	{
 		if (doc_data.author)
-		{
-			prog_err(*i, "cannot redefine document author!");
-			return PS_ERR;
-		}
+			free(doc_data.author);
 		
 		*i += 11;
 		size_t begin = *i;
-		while (file_data.markup[*i] && file_data.markup[*i] != '\n')
+		while (data[*i] && data[*i] != '\n')
 			++*i;
 		
-		doc_data.author = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		doc_data.author = htmlified_substr(data, begin, *i, HS_NONE);
 	}
-	else if (!strncmp("DOC-CREATED ", &file_data.markup[*i], 12))
+	else if (!strncmp("DOC-CREATED ", &data[*i], 12))
 	{
 		if (doc_data.created)
-		{
-			prog_err(*i, "cannot redefine document creation date!");
-			return PS_ERR;
-		}
+			free(doc_data.created);
 		
 		*i += 12;
 		size_t begin = *i;
-		while (file_data.markup[*i] && file_data.markup[*i] != '\n')
+		while (data[*i] && data[*i] != '\n')
 			++*i;
 		
-		doc_data.created = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		doc_data.created = htmlified_substr(data, begin, *i, HS_NONE);
 	}
-	else if (!strncmp("DOC-REVISED ", &file_data.markup[*i], 12))
+	else if (!strncmp("DOC-REVISED ", &data[*i], 12))
 	{
 		if (doc_data.revised)
-		{
-			prog_err(*i, "cannot redefine document revision date!");
-			return PS_ERR;
-		}
+			free(doc_data.revised);
 		
 		*i += 12;
 		size_t begin = *i;
-		while (file_data.markup[*i] && file_data.markup[*i] != '\n')
+		while (data[*i] && data[*i] != '\n')
 			++*i;
 		
-		doc_data.revised = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		doc_data.revised = htmlified_substr(data, begin, *i, HS_NONE);
+	}
+	else if (!strncmp("DOC-LICENSE ", &data[*i], 12))
+	{
+		if (doc_data.license)
+			free(doc_data.license);
+		
+		*i += 12;
+		size_t begin = *i;
+		while (data[*i] && data[*i] != '\n')
+			++*i;
+		
+		doc_data.license = htmlified_substr(data, begin, *i, HS_NONE);
+	}
+	else if (!strncmp("DOC-RAW-TEXT ", &data[*i], 13))
+	{
+		*i += 13;
+		if (!data[*i] || !strchr("01", data[*i]))
+		{
+			prog_err(file, data, *i, "expected 0 or 1 after DOC-RAW-TEXT!");
+			return PS_ERR;
+		}
+		
+		raw_text = data[*i] - '0';
+		
+		while (data[*i] && data[*i] != '\n')
+			++*i;
 	}
 	else
 	{
-		prog_err(*i, "unknown DOC directive!");
+		prog_err(file, data, *i, "unknown DOC directive!");
 		return PS_ERR;
 	}
 	
@@ -893,124 +976,131 @@ parse_doc(struct node *out, size_t *i)
 }
 
 static enum parse_status
-parse_footnote(struct node *out, size_t *i)
+parse_footnote(struct node *out, size_t *i, char const *data, size_t len)
 {
 	char *name;
 	{
 		*i += 2;
 		size_t begin = *i;
-		while (file_data.markup[*i] && file_data.markup[*i] != ']')
+		while (data[*i] && data[*i] != ']')
 		{
-			if (*i + 1 < file_data.markup_len
-			    && file_data.markup[*i] == '\\')
-			{
+			if (*i + 1 < len && data[*i] == '\\')
 				++*i;
-			}
 			++*i;
 		}
 		
-		name = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW);
+		name = htmlified_substr(data, begin, *i, HS_FORCE_RAW);
 	}
 	
 	char *text;
 	{
 		++*i;
 		size_t begin = *i;
-		while (file_data.markup[*i]
-		       && strncmp("\n\n", &file_data.markup[*i], 2))
+		while (data && strncmp("\n\n", &data[*i], 2))
 		{
 			++*i;
 		}
 		
-		text = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		text = htmlified_substr(data, begin, *i, HS_NONE);
 	}
 	
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_FOOTNOTE,
-	};
-	out->data[0] = name;
-	out->data[1] = text;
+		*out = (struct node)
+		{
+			.type = NT_FOOTNOTE,
+		};
+		out->data[0] = name;
+		out->data[1] = text;
+	}
 	
 	return PS_OK;
 }
 
 static enum parse_status
-parse_image(struct node *out, size_t *i)
+parse_image(struct node *out, size_t *i, char const *data)
 {
 	*i += 3;
 	size_t begin = *i;
-	while (file_data.markup[*i] && file_data.markup[*i] != '\n')
+	while (data[*i] && data[*i] != '\n')
 		++*i;
 	
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_IMAGE,
-	};
-	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_FORCE_RAW);
+		*out = (struct node)
+		{
+			.type = NT_IMAGE,
+		};
+		out->data[0] = htmlified_substr(data, begin, *i, HS_FORCE_RAW);
+	}
 	
 	return PS_OK;
 }
 
 static enum parse_status
-parse_long_code(struct node *out, size_t *i)
+parse_long_code(struct node *out, size_t *i, char const *data)
 {
 	*i += 4;
 	size_t begin = *i;
-	while (file_data.markup[*i]
-	       && strncmp(&file_data.markup[*i], "\n```\n", 4))
-	{
+	while (data[*i] && strncmp(&data[*i], "\n```\n", 4))
 		++*i;
+	
+	if (out)
+	{
+		*out = (struct node)
+		{
+			.type = NT_LONG_CODE,
+		};
+		out->data[0] = htmlified_substr(data, begin, *i, HS_NONE);
 	}
 	
-	*out = (struct node)
-	{
-		.type = NT_LONG_CODE,
-	};
-	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
-	
-	if (file_data.markup[*i])
+	if (data[*i])
 		*i += 4;
 	
 	return PS_OK;
 }
 
 static enum parse_status
-parse_o_list(struct node *out, size_t *i)
+parse_o_list(struct node *out, size_t *i, char const *data, size_t len)
 {
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_O_LIST,
-	};
+		*out = (struct node)
+		{
+			.type = NT_O_LIST,
+		};
+	}
 	
 	for (;;)
 	{
 		int depth = 0;
-		while (file_data.markup[*i] == '#')
+		while (data[*i] == '#')
 		{
 			++*i;
 			++depth;
 		}
 		
 		size_t begin = *i;
-		while (file_data.markup[*i]
-		       && strncmp("\n\n", &file_data.markup[*i], 2)
-		       && strncmp("\n#", &file_data.markup[*i], 2))
+		while (data[*i]
+		       && strncmp("\n\n", &data[*i], 2)
+		       && strncmp("\n#", &data[*i], 2))
 		{
 			++*i;
 		}
 		
-		struct node item =
+		if (out)
 		{
-			.type = NT_LIST_ITEM,
-			.arg = depth,
-		};
-		item.data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
-		
-		node_add_child(out, &item);
+			struct node item =
+			{
+				.type = NT_LIST_ITEM,
+				.arg = depth,
+			};
+			item.data[0] = htmlified_substr(data, begin, *i, HS_NONE);
+			node_add_child(out, &item);
+		}
 		
 		++*i;
-		if (*i >= file_data.markup_len || file_data.markup[*i] == '\n')
+		if (*i >= len || data[*i] == '\n')
 			break;
 	}
 	
@@ -1018,57 +1108,68 @@ parse_o_list(struct node *out, size_t *i)
 }
 
 static enum parse_status
-parse_paragraph(struct node *out, size_t *i)
+parse_paragraph(struct node *out, size_t *i, char const *data)
 {
-	*i += 4 * !strncmp("    ", &file_data.markup[*i], 4);
+	*i += 4 * !strncmp("    ", &data[*i], 4);
 	size_t begin = *i;
-	while (file_data.markup[*i]
-	       && strncmp("\n\n", &file_data.markup[*i], 2)
-	       && strncmp("\n    ", &file_data.markup[*i], 5))
+	while (data[*i]
+	       && strncmp("\n\n", &data[*i], 2)
+	       && strncmp("\n    ", &data[*i], 5))
 	{
 		++*i;
 	}
 	
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_PARAGRAPH,
-	};
-	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		*out = (struct node)
+		{
+			.type = NT_PARAGRAPH,
+		};
+		out->data[0] = htmlified_substr(data, begin, *i, HS_NONE);
+	}
 	
 	return PS_OK;
 }
 
 static enum parse_status
-parse_table(struct node *out, size_t *i)
+parse_table(struct node *out,
+            size_t *i,
+            char const *data,
+            size_t len,
+            char const *file)
 {
 	// validate beginning of table.
 	{
-		while (file_data.markup[*i] && file_data.markup[*i] == '-')
+		while (data[*i] && data[*i] == '-')
 			++*i;
-		if (file_data.markup[*i] != '\n')
+		if (data[*i] != '\n')
 		{
-			prog_err(*i, "expected valid table after ---!");
+			prog_err(file, data, *i, "expected valid table after ---!");
 			return PS_ERR;
 		}
 	}
 	
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_TABLE,
-	};
+		*out = (struct node)
+		{
+			.type = NT_TABLE,
+		};
+	}
 	
-	for (++*i; file_data.markup[*i] && file_data.markup[*i] != '\n';)
+	for (++*i; data[*i] && data[*i] != '\n';)
 	{
-		if (file_data.markup[*i] == '|')
+		if (data[*i] == '|')
 		{
 			struct node row;
-			if (parse_table_row(&row, i))
+			if (parse_table_row(&row, i, data, len, file))
 				return PS_ERR;
-			node_add_child(out, &row);
+			if (out)
+				node_add_child(out, &row);
 		}
 		else
 		{
-			prog_err(*i, "expected either | or table end!");
+			prog_err(file, data, *i, "expected either | or table end!");
 			return PS_ERR;
 		}
 	}
@@ -1077,86 +1178,90 @@ parse_table(struct node *out, size_t *i)
 }
 
 static enum parse_status
-parse_table_row(struct node *out, size_t *i)
+parse_table_row(struct node *out,
+                size_t *i,
+                char const *data,
+                size_t len,
+                char const *file)
 {
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_TABLE_ROW,
-	};
+		*out = (struct node)
+		{
+			.type = NT_TABLE_ROW,
+		};
+	}
 	
 	++*i;
 	size_t col = 0;
 	for (;;)
 	{
 		size_t begin = *i;
-		while (file_data.markup[*i] && file_data.markup[*i] != '|')
+		while (data[*i] && data[*i] != '|')
 		{
-			if (*i + 1 < file_data.markup_len
-			    && file_data.markup[*i] == '\\')
-			{
+			if (*i + 1 < len && data[*i] == '\\')
 				++*i;
-			}
 			++*i;
 		}
-		if (!file_data.markup[*i])
+		if (!data[*i])
 		{
-			prog_err(*i, "incomplete table row data!");
+			prog_err(file, data, *i, "incomplete table row data!");
 			return PS_ERR;
 		}
 		
-		char *sub = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
-		if (col >= out->nchildren)
+		if (out)
 		{
-			struct node item =
+			char *sub = htmlified_substr(data, begin, *i, HS_NONE);
+			if (col >= out->nchildren)
 			{
-				.type = NT_TABLE_ITEM,
-			};
-			item.data[0] = sub;
-			
-			node_add_child(out, &item);
-		}
-		else
-		{
-			size_t slen = strlen(out->children[col].data[0]);
-			size_t scap = slen + 1;
-			str_dyn_append_c(&out->children[col].data[0], &slen, &scap, ' ');
-			str_dyn_append_s(&out->children[col].data[0], &slen, &scap, sub);
-			free(sub);
+				struct node item =
+				{
+					.type = NT_TABLE_ITEM,
+				};
+				item.data[0] = sub;
+				
+				if (out)
+					node_add_child(out, &item);
+			}
+			else
+			{
+				size_t slen = strlen(out->children[col].data[0]);
+				size_t scap = slen + 1;
+				str_dyn_append_c(&out->children[col].data[0], &slen, &scap, ' ');
+				str_dyn_append_s(&out->children[col].data[0], &slen, &scap, sub);
+				free(sub);
+			}
 		}
 		
 		++*i;
-		if (file_data.markup[*i] == '\n')
+		if (data[*i] == '\n')
 		{
 			++*i;
 			col = 0;
-			if (!file_data.markup[*i])
+			if (!data[*i])
 			{
-				prog_err(*i, "unterminated table row!");
+				prog_err(file, data, *i, "unterminated table row!");
 				return PS_ERR;
 			}
-			else if (file_data.markup[*i] == '-')
+			else if (data[*i] == '-')
 			{
-				while (file_data.markup[*i]
-				       && file_data.markup[*i] == '-')
-				{
+				while (data[*i] && data[*i] == '-')
 					++*i;
-				}
 				
-				if (file_data.markup[*i]
-				    && file_data.markup[*i] != '\n')
+				if (data[*i] && data[*i] != '\n')
 				{
-					prog_err(*i, "table row improperly terminated!");
+					prog_err(file, data, *i, "table row improperly terminated!");
 					return PS_ERR;
 				}
 				
 				++*i;
 				break;
 			}
-			else if (file_data.markup[*i] == '|')
+			else if (data[*i] == '|')
 				++*i;
 			else
 			{
-				prog_err(*i, "expected row to either terminate or continue!");
+				prog_err(file, data, *i, "expected row to either terminate or continue!");
 				return PS_ERR;
 			}
 		}
@@ -1168,13 +1273,13 @@ parse_table_row(struct node *out, size_t *i)
 }
 
 static enum parse_status
-parse_title(struct node *out, size_t *i)
+parse_title(struct node *out, size_t *i, char const *data, char const *file)
 {
 	// get and validate header size.
 	int hsize = 0;
 	{
 		size_t title_begin = *i;
-		while (file_data.markup[*i] == '=')
+		while (data[*i] == '=')
 		{
 			++*i;
 			++hsize;
@@ -1182,61 +1287,69 @@ parse_title(struct node *out, size_t *i)
 		
 		if (hsize > 6)
 		{
-			prog_err(title_begin, "minimum title size is 6!");
+			prog_err(file, data, title_begin, "minimum title size is 6!");
 			return PS_ERR;
 		}
 	}
 	
 	size_t begin = *i;
-	while (file_data.markup[*i] && strncmp("\n\n", &file_data.markup[*i], 2))
+	while (data[*i] && strncmp("\n\n", &data[*i], 2))
 		++*i;
 	
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_TITLE,
-		.arg = hsize,
-	};
-	out->data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
+		*out = (struct node)
+		{
+			.type = NT_TITLE,
+			.arg = hsize,
+		};
+		out->data[0] = htmlified_substr(data, begin, *i, HS_NONE);
+	}
 	
 	return PS_OK;
 }
 
 static enum parse_status
-parse_u_list(struct node *out, size_t *i)
+parse_u_list(struct node *out, size_t *i, char const *data, size_t len)
 {
-	*out = (struct node)
+	if (out)
 	{
-		.type = NT_U_LIST,
-	};
+		*out = (struct node)
+		{
+			.type = NT_U_LIST,
+		};
+	}
 	
 	for (;;)
 	{
 		int depth = 0;
-		while (file_data.markup[*i] == '*')
+		while (data[*i] == '*')
 		{
 			++*i;
 			++depth;
 		}
 		
 		size_t begin = *i;
-		while (file_data.markup[*i]
-		       && strncmp("\n\n", &file_data.markup[*i], 2)
-		       && strncmp("\n*", &file_data.markup[*i], 2))
+		while (data[*i]
+		       && strncmp("\n\n", &data[*i], 2)
+		       && strncmp("\n*", &data[*i], 2))
 		{
 			++*i;
 		}
 		
-		struct node item =
+		if (out)
 		{
-			.type = NT_LIST_ITEM,
-			.arg = depth,
-		};
-		item.data[0] = htmlified_substr(file_data.markup, begin, *i, HS_NONE);
-		
-		node_add_child(out, &item);
+			struct node item =
+			{
+				.type = NT_LIST_ITEM,
+				.arg = depth,
+			};
+			item.data[0] = htmlified_substr(data, begin, *i, HS_NONE);
+			node_add_child(out, &item);
+		}
 		
 		++*i;
-		if (*i >= file_data.markup_len || file_data.markup[*i] == '\n')
+		if (*i >= len || data[*i] == '\n')
 			break;
 	}
 	
@@ -1244,16 +1357,16 @@ parse_u_list(struct node *out, size_t *i)
 }
 
 static void
-prog_err(size_t start, char const *msg)
+prog_err(char const *file, char const *data, size_t start, char const *msg)
 {
 	fprintf(stderr,
 	        "%s[%zu] err: %s\n"
 	        "%zu...    %s\n",
-	        conf.markup_file,
+	        file,
 	        start,
 	        msg,
 	        start,
-	        single_line(file_data.markup, start));
+	        single_line(data, start));
 }
 
 // temporarily access a single line of a larger string as a null-terminated
@@ -1331,6 +1444,7 @@ usage(char const *name)
 	       "\t%s [options] file\n"
 	       "options:\n"
 	       "\t-A       dump the AST of the parsed markup\n"
+	       "\t-d       use the specified file as docdata\n"
 	       "\t-h       display this text\n"
 	       "\t-o file  write output to the specified file\n"
 	       "\t-s file  use the specified file as a stylesheet\n",
