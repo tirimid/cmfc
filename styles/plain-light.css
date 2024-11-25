@@ -1,0 +1,117 @@
+html {
+	background-color: #ffffff;
+	padding-top: 5ch;
+	padding-bottom: 5ch;
+}
+
+body {
+	margin-left: auto;
+	margin-right: auto;
+	width: 80ch;
+	color: #000000;
+	font-family: serif;
+	font-weight: normal;
+}
+
+h1 {
+	padding-top: 1ch;
+	font-size: 4.5ch;
+	font-weight: bold;
+}
+
+h2 {
+	font-size: 3ch;
+	font-weight: bold;
+}
+
+h3 {
+	font-size: 2.5ch;
+	font-weight: bold;
+}
+
+h4, h5, h6 {
+	font-size: 2ch;
+	font-weight: bold;
+}
+
+li {
+	margin: 0 auto;
+}
+
+td {
+	margin: 0 auto;
+	padding: 1ch;
+}
+
+table {
+	margin-left: 1ch;
+	margin-right: 1ch;
+	margin-top: 3ch;
+	margin-bottom: 3ch;
+	display: block;
+	overflow-x: scroll;
+	border-collapse: collapse;
+}
+
+tr, td {
+	border: solid 1px #000000;
+	border-collapse: collapse;
+}
+
+p {
+	text-indent: 4ch;
+	margin: 0 auto;
+}
+
+.footnote {
+	padding: 1ch;
+}
+
+img {
+	max-height: 100%;
+	max-width: 100%;
+}
+
+a {
+	color: #00ffff;
+}
+
+a:hover {
+	background-color: #00ffff;
+	color: #000000;
+}
+
+.long-code {
+	width: 85ch;
+	margin-right: 1ch;
+	margin-top: 3ch;
+	margin-bottom: 3ch;
+	margin-left: -4ch;
+	padding: 2ch;
+	white-space: pre-wrap;
+	tab-size: 6;
+	font-family: monospace;
+}
+
+blockquote {
+	text-indent: 0ch;
+	margin: 0 auto;
+	padding-left: 6ch;
+	padding-top: 1ch;
+	padding-bottom: 1ch;
+}
+
+.doc-title {
+	font-size: 7ch;
+}
+
+.doc-author, .doc-date {
+	color: #555555;
+	font-size: 2.5ch;
+}
+
+.doc-license {
+	color: #555555;
+	font-size: 2.5ch;
+	padding-top: 3ch;
+}
