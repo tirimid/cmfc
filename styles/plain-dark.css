@@ -1,5 +1,5 @@
 html {
-	background-color: #ffffff;
+	background-color: #000000;
 	padding-top: 5ch;
 	padding-bottom: 5ch;
 }
@@ -8,7 +8,7 @@ body {
 	margin-left: auto;
 	margin-right: auto;
 	width: 80ch;
-	color: #000000;
+	color: #ffffff;
 	font-family: serif;
 	font-weight: normal;
 }
@@ -54,7 +54,7 @@ table {
 }
 
 tr, td {
-	border: solid 1px #000000;
+	border: solid 1px #ffffff;
 	border-collapse: collapse;
 }
 
@@ -73,12 +73,12 @@ img {
 }
 
 a {
-	color: #00779f;
+	color: #00ffff;
 }
 
 a:hover {
-	background-color: #00779f;
-	color: #ffffff;
+	background-color: #00ffff;
+	color: #000000;
 }
 
 .long-code {
@@ -106,12 +106,12 @@ blockquote {
 }
 
 .doc-author, .doc-date {
-	color: #555555;
+	color: #aaaaaa;
 	font-size: 2.5ch;
 }
 
 .doc-license {
-	color: #555555;
+	color: #aaaaaa;
 	font-size: 2.5ch;
 	padding-top: 3ch;
 }
