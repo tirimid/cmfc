@@ -99,6 +99,7 @@ struct doc_data
 	char *author;
 	char *created, *revised;
 	char *license;
+	char *favicon;
 };
 
 static int conf_read(int argc, char const *argv[]);
@@ -411,13 +412,23 @@ gen_html(void)
 		        "<!DOCTYPE html>\n"
 		        "<html>\n"
 		        "<head>\n"
-		        "<title>%s</title>\n"
-		        "<style>%s</style>\n"
+		        "<title>%s</title>\n",
+		        doc_data.title);
+		
+		if (conf.style_file)
+			fprintf(conf.out_fp, "<style>%s</style>\n", file_data.style);
+		
+		if (doc_data.favicon)
+		{
+			fprintf(conf.out_fp,
+			        "<link rel=\"icon\" type=\"image/x-icon\" href=\"%s\">\n",
+			        doc_data.favicon);
+		}
+		
+		fprintf(conf.out_fp,
 		        "</head>\n"
 		        "<body>\n"
 		        "<div class=\"doc-title\">%s</div>\n",
-		        doc_data.title,
-		        conf.style_file ? file_data.style : "",
 		        doc_data.title);
 		
 		// write out author.
@@ -951,6 +962,18 @@ parse_doc(size_t *i, char const *data, char const *file)
 			++*i;
 		
 		doc_data.license = htmlified_substr(data, begin, *i, HS_NONE);
+	}
+	else if (!strncmp("DOC-FAVICON ", &data[*i], 12))
+	{
+		if (doc_data.favicon)
+			free(doc_data.favicon);
+		
+		*i += 12;
+		size_t begin = *i;
+		while (data[*i] && data[*i] != '\n')
+			++*i;
+		
+		doc_data.favicon = htmlified_substr(data, begin, *i, HS_NONE);
 	}
 	else if (!strncmp("DOC-RAW-TEXT ", &data[*i], 13))
 	{
