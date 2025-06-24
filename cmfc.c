@@ -412,6 +412,7 @@ gen_html(void)
 		        "<!DOCTYPE html>\n"
 		        "<html>\n"
 		        "<head>\n"
+		        "<meta charset=\"UTF-8\">\n"
 		        "<title>%s</title>\n",
 		        doc_data.title);
 		
@@ -731,6 +732,12 @@ htmlified_substr(char const *s, size_t lb, size_t ub, enum htmlify_state hstate)
 		else if (HS_IS_RAW(hstate) && s[i] == '"')
 		{
 			str_dyn_append_s(&sub, &slen, &scap, "%22");
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate) && i + 2 < ub && !strncmp(&s[i], "---", 3))
+		{
+			str_dyn_append_s(&sub, &slen, &scap, "&mdash;");
+			i += 2;
 			continue;
 		}
 		
