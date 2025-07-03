@@ -740,6 +740,18 @@ htmlified_substr(char const *s, size_t lb, size_t ub, enum htmlify_state hstate)
 			i += 2;
 			continue;
 		}
+		else if (HS_IS_TEXT(hstate) && i + 1 < ub && !strncmp(&s[i], "--", 2))
+		{
+			str_dyn_append_s(&sub, &slen, &scap, "&ndash;");
+			++i;
+			continue;
+		}
+		else if (HS_IS_TEXT(hstate) && i + 1 < ub && !strncmp(&s[i], "//", 2))
+		{
+			str_dyn_append_s(&sub, &slen, &scap, "<br>");
+			++i;
+			continue;
+		}
 		
 		// if not special, just add the character.
 		{
