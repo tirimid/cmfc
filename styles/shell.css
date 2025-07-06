@@ -102,7 +102,12 @@ blockquote {
 }
 
 .doc-title {
+	padding-top: 1ch;
 	font-size: 7ch;
+}
+
+.doc-subtitle {
+	font-size: 3.5ch;
 }
 
 .doc-author, .doc-date {

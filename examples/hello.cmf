@@ -1,4 +1,5 @@
-DOC-TITLE Hello World - Simple CMFC Test
+DOC-TITLE Hello World
+DOC-SUBTITLE Simple CMFC Test
 DOC-CREATED 2024-10-07
 DOC-REVISED 2024-11-23
 
@@ -91,7 +92,7 @@ with.@[https://tirimid.net|links].in_them;`. Human... I remember you're
 
 ==Images
 
-!()https://tirimid.net/res/gamingfumo.png
+!()https://tirimid.net/res/favicon.png
 
 ==Tables
 

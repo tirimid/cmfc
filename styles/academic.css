@@ -111,7 +111,14 @@ blockquote {
 }
 
 .doc-title {
+	padding-top: 1ch;
 	font-size: 7ch;
+	font-family: serif;
+	text-align: center;
+}
+
+.doc-subtitle {
+	font-size: 3ch;
 	font-family: serif;
 	text-align: center;
 }

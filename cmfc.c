@@ -95,7 +95,7 @@ struct node
 
 struct doc_data
 {
-	char *title;
+	char *title, *subtitle;
 	char *author;
 	char *created, *revised;
 	char *license;
@@ -420,17 +420,7 @@ gen_html(void)
 			fprintf(conf.out_fp, "<style>%s</style>\n", file_data.style);
 		
 		if (doc_data.favicon)
-		{
-			fprintf(conf.out_fp,
-			        "<link rel=\"icon\" type=\"image/x-icon\" href=\"%s\">\n",
-			        doc_data.favicon);
-		}
-		
-		fprintf(conf.out_fp,
-		        "</head>\n"
-		        "<body>\n"
-		        "<div class=\"doc-title\">%s</div>\n",
-		        doc_data.title);
+			fprintf(conf.out_fp, "<link rel=\"icon\" type=\"image/x-icon\" href=\"%s\">\n", doc_data.favicon);
 		
 		// write out author.
 		if (doc_data.author)
@@ -445,6 +435,15 @@ gen_html(void)
 			if (doc_data.created)
 				fprintf(conf.out_fp, "</div>\n");
 		}
+		
+		fprintf(conf.out_fp, "<div class=\"doc-title\">%s</div>\n", doc_data.title);
+		
+		if (doc_data.subtitle)
+			fprintf(conf.out_fp, "<div class=\"doc-subtitle\">%s</div>\n", doc_data.subtitle);
+		
+		fprintf(conf.out_fp,
+		        "</head>\n"
+		        "<body>\n");
 	}
 	
 	// write out document contents.
@@ -933,6 +932,18 @@ parse_doc(size_t *i, char const *data, char const *file)
 			++*i;
 		
 		doc_data.title = htmlified_substr(data, begin, *i, HS_NONE);
+	}
+	else if (!strncmp("DOC-SUBTITLE ", &data[*i], 13))
+	{
+		if (doc_data.subtitle)
+			free(doc_data.subtitle);
+		
+		*i += 13;
+		size_t begin = *i;
+		while (data[*i] && data[*i] != '\n')
+			++*i;
+		
+		doc_data.subtitle = htmlified_substr(data, begin, *i, HS_NONE);
 	}
 	else if (!strncmp("DOC-AUTHOR ", &data[*i], 11))
 	{
